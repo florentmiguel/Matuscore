@@ -2423,10 +2423,20 @@ def admin_dates_ouverture_supprimer(did):
 
 @app.route('/api/dates-ouverture/import-pdf', methods=['POST'])
 def admin_dates_ouverture_import_pdf():
-    """Lit un PDF (arrêté d'ouverture des vendanges) et propose une extraction
-    commune/cépage/date à VÉRIFIER — rien n'est enregistré à cette étape, ce sont
-    des dates réglementaires, une erreur de lecture ne doit jamais passer en
-    silence. L'admin corrige puis confirme via /import-confirmer."""
+    """Lit un PDF officiel du Comité Champagne ('Dates d'ouverture de la vendange')
+    et propose une extraction commune/cépage/date à VÉRIFIER — rien n'est enregistré
+    à cette étape, ce sont des dates réglementaires, une erreur de lecture ne doit
+    jamais passer en silence. L'admin corrige puis confirme via /import-confirmer.
+
+    Structure attendue (validée sur le document réel 2026 du Comité Champagne) :
+    un tableau par page/section avec 2 blocs commune côte à côte, chaque bloc =
+    [Commune, Chardonnay, renvoi, Pinot noir, renvoi, Meunier, renvoi]. Les dates
+    sont en JJ/MM sans année (l'année vient du titre du document, ou de la
+    campagne en cours à défaut). Une commune dont les 3 cépages ont la même date
+    est regroupée en une seule ligne 'tous cépages' ; sinon une ligne par cépage
+    concerné (les cépages sans date, ex. Pinot noir absent d'une commune, sont
+    ignorés). Toute ligne portant un renvoi de note (ex. '(4)') est signalée en
+    confiance basse plutôt que d'essayer d'interpréter la note automatiquement."""
     if 'fichier' not in request.files:
         return jsonify({"error": "Aucun fichier reçu."}), 400
     f = request.files['fichier']
@@ -2435,61 +2445,76 @@ def admin_dates_ouverture_import_pdf():
     except ImportError:
         return jsonify({"error": "pdfplumber n'est pas installé sur le serveur."}), 500
 
-    lignes_brutes = []
     try:
+        premiere_page_texte = ''
+        lignes_tables = []
         with pdfplumber.open(f) as pdf:
+            if pdf.pages:
+                premiere_page_texte = pdf.pages[0].extract_text() or ''
             for page in pdf.pages:
                 for table in (page.extract_tables() or []):
-                    for row in table:
-                        cells = [c.strip() if c else '' for c in row]
-                        if any(cells):
-                            lignes_brutes.append(cells)
-                texte = page.extract_text() or ''
-                for line in texte.split('\n'):
-                    if line.strip():
-                        lignes_brutes.append([line.strip()])
+                    lignes_tables.extend(table)
     except Exception as e:
         return jsonify({"error": f"Impossible de lire ce PDF : {e}"}), 400
 
-    # Extraction "best effort" : cherche une commune connue + une date (JJ/MM/AAAA
-    # ou JJ mois AAAA) sur chaque ligne/rangée de tableau. Volontairement prudent :
-    # mieux vaut renvoyer moins de lignes détectées et les faire compléter à la main
-    # que d'inventer une correspondance fausse.
-    MOIS = {'janvier':1,'février':2,'fevrier':2,'mars':3,'avril':4,'mai':5,'juin':6,'juillet':7,
-            'août':8,'aout':8,'septembre':9,'octobre':10,'novembre':11,'décembre':12,'decembre':12}
-    date_re = re.compile(r'(\d{1,2})[/\s]+(\d{1,2}|' + '|'.join(MOIS.keys()) + r')[/\s]+(\d{4})', re.IGNORECASE)
-    cepages_connus = ['Chardonnay', 'Pinot Noir', 'Meunier', 'Pinot Meunier', 'Pinot Blanc', 'Arbane', 'Petit Meslier']
+    if not lignes_tables:
+        return jsonify({"error": "Aucun tableau détecté dans ce PDF — structure inattendue, vérifiez le fichier."}), 400
 
-    conn = get_db()
-    communes_connues = {r[0] for r in conn.execute("SELECT DISTINCT commune FROM parcelles WHERE commune IS NOT NULL").fetchall()}
-    conn.close()
+    m_annee = re.search(r'vendange[s]?\s+(\d{4})', premiere_page_texte, re.IGNORECASE)
+    annee = m_annee.group(1) if m_annee else '2026'
 
     propositions = []
-    for cells in lignes_brutes:
-        texte_ligne = ' '.join(cells)
-        m = date_re.search(texte_ligne)
-        if not m: continue
-        jour, mois_str, annee = m.groups()
-        mois = MOIS.get(mois_str.lower()) if not mois_str.isdigit() else int(mois_str)
-        if not mois: continue
-        try:
-            date_iso = f"{int(annee):04d}-{mois:02d}-{int(jour):02d}"
-        except Exception:
+    for row in lignes_tables:
+        if not row or len(row) < 15:
             continue
-        commune_trouvee = next((c for c in communes_connues if c and c.upper() in texte_ligne.upper()), None)
-        cepage_trouve = next((c for c in cepages_connus if c.lower() in texte_ligne.lower()), None)
-        propositions.append({
-            "texte_source": texte_ligne[:200],
-            "commune": commune_trouvee or "",
-            "cepage": cepage_trouve or "",
-            "date_ouverture": date_iso,
-            "confiance": "haute" if commune_trouvee else "basse",
-        })
+        if row[0] and row[0].strip() == 'Crus':
+            continue  # ligne d'en-tête
+        for base in (0, 8):  # deux blocs commune côte à côte par ligne
+            commune = row[base]
+            if not commune or not commune.strip():
+                continue
+            commune = commune.strip().upper()
+            cepages = {
+                'Chardonnay': (row[base+1], row[base+2]),
+                'Pinot Noir': (row[base+3], row[base+4]),
+                'Meunier':    (row[base+5], row[base+6]),
+            }
+            valides = {c: ((d or '').strip(), (n or '').strip()) for c, (d, n) in cepages.items() if d and d.strip()}
+            if not valides:
+                continue
+            dates_distinctes = {d for d, n in valides.values()}
+            a_renvoi = any(n for d, n in valides.values())
+
+            def _vers_iso(jjmm):
+                m = re.match(r'^(\d{1,2})/(\d{1,2})$', jjmm)
+                if not m: return None
+                j, mo = m.groups()
+                try: return f"{int(annee):04d}-{int(mo):02d}-{int(j):02d}"
+                except Exception: return None
+
+            if len(dates_distinctes) == 1 and len(valides) == 3:
+                date_iso = _vers_iso(list(dates_distinctes)[0])
+                if not date_iso: continue
+                propositions.append({
+                    "commune": commune, "cepage": "", "date_ouverture": date_iso,
+                    "confiance": "basse" if a_renvoi else "haute",
+                    "note": "renvoi de note à vérifier sur le PDF original" if a_renvoi else "",
+                })
+            else:
+                for cepage, (date, note) in valides.items():
+                    date_iso = _vers_iso(date)
+                    if not date_iso: continue
+                    propositions.append({
+                        "commune": commune, "cepage": cepage, "date_ouverture": date_iso,
+                        "confiance": "basse" if note else "haute",
+                        "note": f"renvoi {note} à vérifier sur le PDF original" if note else "",
+                    })
 
     return jsonify({
         "propositions": propositions,
-        "nb_lignes_analysees": len(lignes_brutes),
-        "avertissement": "Extraction automatique non garantie — vérifiez et corrigez chaque ligne avant de confirmer."
+        "annee_detectee": annee,
+        "nb_lignes_analysees": len(lignes_tables),
+        "avertissement": "Vérifiez notamment les lignes en confiance basse (renvois de note) avant de confirmer — elles peuvent concerner un zonage particulier non capturé automatiquement."
     })
 
 @app.route('/api/dates-ouverture/import-confirmer', methods=['POST'])
@@ -6474,6 +6499,10 @@ def admin_dashboard():
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     return response
+
+@app.route('/admin-dates-ouverture')
+def page_admin_dates_ouverture():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'admin-dates-ouverture.html')
 
 @app.route('/admin-upload-db')
 def page_admin_upload_db():

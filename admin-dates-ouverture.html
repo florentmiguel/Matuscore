@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MatuScore Admin — Dates d'ouverture</title>
+<style>
+body{font-family:-apple-system,sans-serif;background:#f8faf8;margin:0;padding:20px;color:#1f2937;font-size:14px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:18px;color:#2D6A4F;margin-bottom:4px}
+.sub{font-size:12px;color:#6B7280;margin-bottom:20px}
+.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:20px}
+h2{font-size:14px;color:#2D6A4F;margin-bottom:10px}
+.drop{border:2px dashed #B7E4C7;border-radius:10px;padding:24px;text-align:center;color:#6B7280;font-size:13px}
+input[type=file]{margin-top:10px}
+button{background:#2D6A4F;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.outline{background:#fff;color:#2D6A4F;border:1.5px solid #B7E4C7}
+button.danger{background:#FFEBEE;color:#C1121F}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:6px 8px;background:#F0F7F0;color:#2D6A4F;font-size:11px;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0}
+td{padding:4px 8px;border-bottom:1px solid #f0f0f0}
+tr.basse{background:#FFF8E8}
+input.cell{width:100%;border:1px solid transparent;background:transparent;padding:3px 4px;font-size:12.5px;border-radius:4px}
+input.cell:focus{border-color:#40916C;background:#fff;outline:none}
+.badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
+.badge.haute{background:#E8F5E9;color:#2D6A4F}
+.badge.basse{background:#FFF3CD;color:#664d03}
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.msg{padding:10px 12px;border-radius:8px;font-size:13px;margin-top:10px;display:none}
+.msg.ok{background:#E8F5E9;color:#2D6A4F;display:block}
+.msg.err{background:#FFEBEE;color:#C1121F;display:block}
+.small{font-size:11px;color:#6B7280}
+.tbl-wrap{max-height:520px;overflow:auto;border:1px solid #eee;border-radius:8px}
+.rowdel{color:#C1121F;cursor:pointer;font-size:14px;background:none;border:none;padding:2px 6px}
+.filters{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.filters input,.filters select{padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📅 Dates d'ouverture de la vendange — Gestion</h1>
+  <div class="sub">Référentiel partagé par tous les comptes MatuScore. Les dates saisies ici sont visibles par tous les vignerons dès validation.</div>
+
+  <div class="card">
+    <h2>1. Importer un PDF officiel</h2>
+    <div class="drop">
+      📄 Sélectionne le PDF "Dates d'ouverture de la vendange" du Comité Champagne<br>
+      <input type="file" id="pdfFile" accept=".pdf">
+      <div style="margin-top:12px"><button id="btnAnalyser" onclick="analyserPdf()">Analyser le PDF</button></div>
+    </div>
+    <div id="msgImport" class="msg"></div>
+  </div>
+
+  <div class="card" id="cardVerif" style="display:none">
+    <h2>2. Vérifier avant d'enregistrer</h2>
+    <div class="small" id="infoExtraction" style="margin-bottom:10px"></div>
+    <div class="filters">
+      <input type="text" id="filtreCommune" placeholder="Filtrer par commune..." oninput="filtrerLignes()">
+      <select id="filtreConfiance" onchange="filtrerLignes()">
+        <option value="">Toutes confiances</option>
+        <option value="basse">Confiance basse seulement</option>
+      </select>
+      <span class="small" id="compteur" style="align-self:center"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table id="tblProps">
+        <thead><tr><th>Commune</th><th>Cépage</th><th>Date</th><th>Confiance</th><th>Note</th><th></th></tr></thead>
+        <tbody id="tbodyProps"></tbody>
+      </table>
+    </div>
+    <div class="toolbar" style="margin-top:14px">
+      <span class="small" id="totalRestant"></span>
+      <div style="display:flex;gap:8px">
+        <button class="outline" onclick="supprimerLignesBasses()">Retirer toutes les lignes confiance basse</button>
+        <button id="btnConfirmer" onclick="confirmerImport()">✅ Confirmer et enregistrer</button>
+      </div>
+    </div>
+    <div id="msgConfirm" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <h2 style="margin:0">3. Dates déjà enregistrées</h2>
+      <button class="outline" onclick="chargerExistant()">Actualiser</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:14px">
+      <input type="text" id="ajCommune" placeholder="Commune" class="cell" style="border:1px solid #ddd;padding:8px">
+      <input type="text" id="ajCepage" placeholder="Cépage (vide = tous)" class="cell" style="border:1px solid #ddd;padding:8px">
+      <input type="date" id="ajDate" class="cell" style="border:1px solid #ddd;padding:8px">
+      <button onclick="ajouterManuel()">+ Ajouter</button>
+    </div>
+    <div class="tbl-wrap" style="max-height:400px">
+      <table>
+        <thead><tr><th>Commune</th><th>Cépage</th><th>Date</th><th>Source</th><th></th></tr></thead>
+        <tbody id="tbodyExistant"><tr><td colspan="5" class="small">Chargement...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let PROPOSITIONS = [];
+
+async function analyserPdf(){
+  const f = document.getElementById('pdfFile').files[0];
+  const msg = document.getElementById('msgImport');
+  if(!f){ msg.className='msg err'; msg.textContent='Choisis un fichier PDF.'; return; }
+  const btn = document.getElementById('btnAnalyser');
+  btn.disabled = true; btn.textContent = 'Analyse en cours...';
+  msg.className = 'msg'; msg.textContent = '';
+  const fd = new FormData(); fd.append('fichier', f);
+  try{
+    const r = await fetch('/api/dates-ouverture/import-pdf', {method:'POST', body:fd});
+    const d = await r.json();
+    if(!r.ok){ msg.className='msg err'; msg.textContent = d.error || 'Erreur.'; btn.disabled=false; btn.textContent='Analyser le PDF'; return; }
+    PROPOSITIONS = d.propositions.map((p,i)=>({...p, _id:i}));
+    document.getElementById('infoExtraction').textContent =
+      `Année détectée : ${d.annee_detectee} · ${d.nb_lignes_analysees} lignes de tableau analysées · ${PROPOSITIONS.length} propositions. ${d.avertissement}`;
+    afficherPropositions();
+    document.getElementById('cardVerif').style.display = 'block';
+    document.getElementById('cardVerif').scrollIntoView({behavior:'smooth'});
+    msg.className = 'msg ok'; msg.textContent = `✓ ${PROPOSITIONS.length} lignes extraites — vérifie avant de confirmer.`;
+  }catch(e){ msg.className='msg err'; msg.textContent = 'Erreur de connexion.'; }
+  btn.disabled = false; btn.textContent = 'Analyser le PDF';
+}
+
+function afficherPropositions(){
+  const tbody = document.getElementById('tbodyProps');
+  const filtreCommune = (document.getElementById('filtreCommune').value||'').toUpperCase();
+  const filtreConf = document.getElementById('filtreConfiance').value;
+  let visibles = PROPOSITIONS.filter(p=>
+    (!filtreCommune || p.commune.toUpperCase().includes(filtreCommune)) &&
+    (!filtreConf || p.confiance===filtreConf)
+  );
+  document.getElementById('compteur').textContent = `${visibles.length} / ${PROPOSITIONS.length} affichées`;
+  document.getElementById('totalRestant').textContent = `${PROPOSITIONS.length} lignes seront enregistrées`;
+  tbody.innerHTML = visibles.map(p=>`
+    <tr class="${p.confiance==='basse'?'basse':''}" data-id="${p._id}">
+      <td><input class="cell" value="${p.commune}" onchange="majLigne(${p._id},'commune',this.value)"></td>
+      <td><input class="cell" value="${p.cepage||''}" placeholder="tous" onchange="majLigne(${p._id},'cepage',this.value)"></td>
+      <td><input class="cell" type="date" value="${p.date_ouverture}" onchange="majLigne(${p._id},'date_ouverture',this.value)"></td>
+      <td><span class="badge ${p.confiance}">${p.confiance}</span></td>
+      <td class="small">${p.note||''}</td>
+      <td><button class="rowdel" onclick="supprimerLigne(${p._id})" title="Retirer cette ligne">✕</button></td>
+    </tr>`).join('');
+}
+
+function majLigne(id, champ, valeur){
+  const p = PROPOSITIONS.find(x=>x._id===id);
+  if(p) p[champ] = valeur;
+}
+function supprimerLigne(id){
+  PROPOSITIONS = PROPOSITIONS.filter(p=>p._id!==id);
+  afficherPropositions();
+}
+function supprimerLignesBasses(){
+  if(!confirm('Retirer toutes les lignes en confiance basse (renvois de note) ? Tu pourras les ajouter à la main ensuite si besoin.')) return;
+  PROPOSITIONS = PROPOSITIONS.filter(p=>p.confiance!=='basse');
+  afficherPropositions();
+}
+function filtrerLignes(){ afficherPropositions(); }
+
+async function confirmerImport(){
+  if(!PROPOSITIONS.length){ return; }
+  if(!confirm(`Enregistrer ${PROPOSITIONS.length} dates d'ouverture ? Elles seront visibles par tous les comptes immédiatement.`)) return;
+  const btn = document.getElementById('btnConfirmer');
+  const msg = document.getElementById('msgConfirm');
+  btn.disabled = true; btn.textContent = 'Enregistrement...';
+  try{
+    const r = await fetch('/api/dates-ouverture/import-confirmer', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({lignes: PROPOSITIONS})
+    });
+    const d = await r.json();
+    msg.className = 'msg ok';
+    msg.textContent = `✓ ${d.nb_importees} dates enregistrées.` + (d.erreurs.length ? ` ${d.erreurs.length} en erreur.` : '');
+    PROPOSITIONS = [];
+    afficherPropositions();
+    chargerExistant();
+  }catch(e){ msg.className='msg err'; msg.textContent='Erreur de connexion.'; }
+  btn.disabled = false; btn.textContent = '✅ Confirmer et enregistrer';
+}
+
+async function chargerExistant(){
+  const tbody = document.getElementById('tbodyExistant');
+  tbody.innerHTML = '<tr><td colspan="5" class="small">Chargement...</td></tr>';
+  try{
+    const r = await fetch('/api/dates-ouverture');
+    const rows = await r.json();
+    if(!rows.length){ tbody.innerHTML = "<tr><td colspan='5' class='small'>Aucune date enregistrée pour l’instant.</td></tr>"; return; }
+    tbody.innerHTML = rows.map(d=>`
+      <tr>
+        <td>${d.commune}</td><td>${d.cepage||'<span class="small">tous</span>'}</td>
+        <td>${new Date(d.date_ouverture+'T12:00:00').toLocaleDateString('fr-FR')}</td>
+        <td class="small">${d.source||''}</td>
+        <td><button class="rowdel" onclick="supprimerExistant(${d.id})" title="Supprimer">✕</button></td>
+      </tr>`).join('');
+  }catch(e){ tbody.innerHTML = '<tr><td colspan="5" class="small">Erreur de chargement.</td></tr>'; }
+}
+
+async function supprimerExistant(id){
+  if(!confirm('Supprimer cette date ? Elle disparaîtra pour tous les comptes.')) return;
+  await fetch(`/api/dates-ouverture/${id}`, {method:'DELETE'});
+  chargerExistant();
+}
+
+async function ajouterManuel(){
+  const commune = document.getElementById('ajCommune').value.trim();
+  const cepage = document.getElementById('ajCepage').value.trim();
+  const date = document.getElementById('ajDate').value;
+  if(!commune || !date){ alert('Commune et date requises.'); return; }
+  await fetch('/api/dates-ouverture', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({commune, cepage, date_ouverture: date})});
+  document.getElementById('ajCommune').value='';
+  document.getElementById('ajCepage').value='';
+  document.getElementById('ajDate').value='';
+  chargerExistant();
+}
+
+chargerExistant();
+</script>
+</body>
+</html>
