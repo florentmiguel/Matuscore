@@ -2942,8 +2942,8 @@ async function itinChargerOuverture(){
       const parcellesCombo = (Array.isArray(parcelles)?parcelles:[]).filter(p=>p.commune===d.commune && (d.cepage?p.cepage===d.cepage:true));
       const derogRows = d.date_ouverture ? parcellesCombo.map(p=>`
         <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:11px;cursor:pointer">
-         <input type="checkbox" ${p.derogation_ouverture?'checked':''} onchange="itinToggleDerogation(${p.id}, this.checked)">
-         ${p.nom} ${p.derogation_ouverture?'<span style="color:var(--gd);font-weight:600">— dérogation active</span>':''}
+         <input type="checkbox" ${p.derogation_ouverture?'checked':''} onchange="itinToggleDerogation(${p.id}, this.checked)" style="width:16px;height:16px;flex-shrink:0;margin:0">
+         <span style="flex:1">${p.nom} ${p.derogation_ouverture?'<span style="color:var(--gd);font-weight:600">— dérogation active</span>':''}</span>
         </label>`).join('') : '';
       return `<div style="border:.5px solid #eee;border-radius:8px;padding:10px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center">
