@@ -12,7 +12,7 @@ Prérequis:
     pip install flask python-docx requests openpyxl
 """
 
-import os, sys, re, json, sqlite3, io, tempfile, math, secrets, smtplib
+import os, sys, re, json, sqlite3, io, tempfile, math, secrets, smtplib, shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from email.mime.multipart import MIMEMultipart
@@ -6474,6 +6474,73 @@ def admin_dashboard():
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     return response
+
+@app.route('/admin-upload-db')
+def page_admin_upload_db():
+    return """<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MatuScore — Import base de données</title>
+    <style>
+    body{font-family:-apple-system,sans-serif;background:#f8faf8;display:flex;align-items:center;
+    justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box}
+    .card{background:#fff;border-radius:12px;padding:28px;box-shadow:0 1px 3px rgba(0,0,0,.1);width:100%;max-width:440px}
+    h1{font-size:17px;color:#2D6A4F;margin-bottom:10px}
+    p{font-size:13px;color:#444;line-height:1.5;margin-bottom:16px}
+    .warn{background:#FFF3CD;color:#664d03;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:16px}
+    input[type=file]{width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box}
+    button{width:100%;padding:12px;border:none;border-radius:8px;background:#2D6A4F;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .msg{margin-top:12px;padding:10px;border-radius:8px;font-size:13px;display:none}
+    .msg.ok{background:#E8F5E9;color:#2D6A4F;display:block}
+    .msg.err{background:#FFEBEE;color:#C1121F;display:block}
+    </style></head><body>
+    <div class="card">
+    <h1>📦 Importer une base de données</h1>
+    <p>Remplace la base actuelle de ce serveur par le fichier <code>vitisens.db</code> envoyé ci-dessous — utile pour transférer tes données depuis ton PC local vers ce déploiement.</p>
+    <div class="warn">⚠️ Ceci écrase toutes les données actuellement sur ce serveur. Une copie de sécurité de la base actuelle est faite automatiquement avant l'écrasement, mais vérifie bien le fichier que tu envoies.</div>
+    <form id="f">
+      <input type="file" id="dbfile" accept=".db" required>
+      <button type="submit" id="btn">Importer et remplacer</button>
+    </form>
+    <div id="msg" class="msg"></div>
+    </div>
+    <script>
+    document.getElementById('f').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const btn=document.getElementById('btn'), msg=document.getElementById('msg');
+      const file=document.getElementById('dbfile').files[0];
+      if(!file){return;}
+      btn.disabled=true; btn.textContent='Envoi en cours...';
+      const fd=new FormData(); fd.append('fichier', file);
+      try{
+        const r=await fetch('/api/admin/upload-db',{method:'POST', body:fd});
+        const d=await r.json();
+        if(!r.ok){ msg.className='msg err'; msg.textContent=d.error||'Erreur.'; btn.disabled=false; btn.textContent='Importer et remplacer'; return; }
+        msg.className='msg ok'; msg.textContent='✓ Base importée avec succès ('+d.taille_octets+' octets). Recharge /admin-vitisens pour vérifier.';
+        btn.textContent='Importé ✓';
+      }catch(err){ msg.className='msg err'; msg.textContent='Erreur de connexion.'; btn.disabled=false; btn.textContent='Importer et remplacer'; }
+    });
+    </script></body></html>"""
+
+@app.route('/api/admin/upload-db', methods=['POST'])
+def api_admin_upload_db():
+    if 'fichier' not in request.files:
+        return jsonify({"error": "Aucun fichier reçu."}), 400
+    f = request.files['fichier']
+    if not f.filename.endswith('.db'):
+        return jsonify({"error": "Le fichier doit être un .db"}), 400
+    data = f.read()
+    if len(data) < 1024 or data[:16] != b'SQLite format 3\x00':
+        return jsonify({"error": "Ce fichier ne ressemble pas à une base SQLite valide — import refusé par sécurité."}), 400
+    try:
+        if os.path.exists(DB_PATH):
+            shutil.copy2(DB_PATH, DB_PATH + '.bak')
+        with open(DB_PATH, 'wb') as out:
+            out.write(data)
+        init_db()  # applique les migrations manquantes si la base importée est plus ancienne
+    except Exception as e:
+        return jsonify({"error": f"Échec de l'import : {e}"}), 500
+    return jsonify({"status": "ok", "taille_octets": len(data)})
 
 @app.route('/.well-known/appspecific/com.chrome.devtools.json')
 def chrome_devtools():
