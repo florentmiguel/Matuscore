@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MatuScore — Créer mon compte</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="theme-color" content="#2D6A4F">
+<style>
+:root{--gd:#2D6A4F;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--or:#E76F51;--gr:#6B7280;--bg:#f8faf8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:#1f2937;font-size:14px}
+.header{background:var(--gd);color:#fff;padding:28px 20px;text-align:center}
+.header h1{font-size:22px;margin-bottom:4px}
+.header .by{font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.header .sub{font-size:13px;opacity:.9}
+.wrap{max-width:440px;margin:0 auto;padding:20px}
+.pitch{background:#fff;border-radius:12px;padding:18px;margin:16px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.pitch h2{font-size:15px;color:var(--gd);margin-bottom:10px}
+.pitch ul{list-style:none;font-size:13px;color:#333;line-height:1.9}
+.pitch li:before{content:"✅ ";}
+.prix{background:var(--gbg);border:1px solid var(--gl);border-radius:10px;padding:12px 16px;text-align:center;margin-top:14px;font-size:13px;color:var(--gd)}
+.prix b{font-size:17px}
+.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.card h3{font-size:15px;color:var(--gd);margin-bottom:14px}
+label{display:block;font-size:12px;color:var(--gr);margin-bottom:4px;margin-top:12px;font-weight:600}
+label:first-of-type{margin-top:0}
+input{width:100%;padding:11px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px}
+input:focus{outline:none;border-color:var(--gm)}
+.btn{display:block;width:100%;padding:13px;border-radius:8px;border:none;font-size:14.5px;font-weight:700;cursor:pointer;margin-top:20px;background:var(--gd);color:#fff}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.msg{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;display:none}
+.msg.err{background:#FFEBEE;color:#C1121F;display:block}
+.msg.ok{background:#E8F5E9;color:#2D6A4F;display:block}
+.foot{text-align:center;margin-top:18px;font-size:13px;color:var(--gr)}
+.foot a{color:var(--gd);font-weight:600;text-decoration:none}
+.essai-tag{font-size:11px;color:var(--gr);text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🍇 MatuScore</h1>
+  <div class="by">by VITI Sens</div>
+  <div class="sub">Pilotez vos vendanges au kg près</div>
+</div>
+
+<div class="wrap">
+
+  <div class="pitch">
+    <h2>Ce que fait MatuScore</h2>
+    <ul>
+      <li>Itinéraire de récolte calculé selon la maturité de chaque parcelle</li>
+      <li>Objectif journalier en kg, adapté à votre presse</li>
+      <li>Suivi parcelle par parcelle, jour par jour</li>
+      <li>Accessible sur mobile, tablette ou ordinateur</li>
+    </ul>
+    <div class="prix">
+      Essai gratuit : <b>3 jours</b>, toutes les fonctionnalités sauf l'itinéraire et les exports<br>
+      Accès complet illimité : <s style="opacity:.6">89 €/an</s> <b>59 € / an</b> — offre de lancement, 100 premiers inscrits
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 id="formTitle">Créer mon compte</h3>
+    <div id="demoNote" style="display:none;font-size:12px;color:var(--gd);background:var(--gbg);border-radius:8px;padding:8px 10px;margin-bottom:14px">
+      📦 Votre compte démarrera avec 12 parcelles d'exemple déjà remplies, pour découvrir l'appli tout de suite.
+    </div>
+    <form id="formInscription">
+      <label>Nom de l'exploitation *</label>
+      <input type="text" id="exploitation" placeholder="Ex. Champagne Dupont" required>
+
+      <label>Email *</label>
+      <input type="email" id="email" name="username" autocomplete="username" placeholder="vous@exemple.fr" required>
+
+      <label>Mot de passe *</label>
+      <input type="password" id="password" name="new-password" autocomplete="new-password" placeholder="6 caractères minimum" required minlength="6">
+
+      <label>Commune *</label>
+      <input type="text" id="commune" placeholder="Ex. Reims" required>
+
+      <label>Téléphone</label>
+      <input type="tel" id="telephone" placeholder="Optionnel">
+
+      <button type="submit" class="btn" id="btnSubmit">Créer mon compte gratuitement</button>
+      <div class="essai-tag">Aucune carte bancaire requise pour l'essai</div>
+      <div id="msg" class="msg"></div>
+    </form>
+  </div>
+
+  <div class="foot">Déjà un compte ? <a href="/connexion">Se connecter</a></div>
+
+</div>
+
+<script>
+document.getElementById('formInscription').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('btnSubmit');
+  const msg = document.getElementById('msg');
+  msg.className = 'msg'; msg.textContent = '';
+  btn.disabled = true; btn.textContent = 'Création en cours...';
+
+  const isDemo = new URLSearchParams(window.location.search).get('demo') === '1';
+
+  const body = {
+    exploitation: document.getElementById('exploitation').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    password: document.getElementById('password').value,
+    commune: document.getElementById('commune').value.trim(),
+    telephone: document.getElementById('telephone').value.trim(),
+  };
+
+  try{
+    const r = await fetch('/api/inscription', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if(!r.ok){
+      msg.className = 'msg err'; msg.textContent = d.error || 'Une erreur est survenue.';
+      btn.disabled = false; btn.textContent = 'Créer mon compte gratuitement';
+      return;
+    }
+    const redirectUrl = d.redirect || '/mon-espace';
+    if(isDemo){
+      msg.className = 'msg ok'; msg.textContent = 'Compte créé ! Préparation des données d\'exemple...';
+      try{
+        const token = redirectUrl.split('/').pop();
+        await fetch(`/api/portail/${token}/exemple/charger`, {method:'POST'});
+      }catch(e){ /* pas bloquant : on redirige quand même */ }
+    } else {
+      msg.className = 'msg ok'; msg.textContent = 'Compte créé ! Redirection...';
+    }
+    setTimeout(()=>{ window.location.href = redirectUrl; }, 600);
+  }catch(err){
+    msg.className = 'msg err'; msg.textContent = 'Erreur de connexion au serveur.';
+    btn.disabled = false; btn.textContent = 'Créer mon compte gratuitement';
+  }
+});
+
+(function(){
+  if(new URLSearchParams(window.location.search).get('demo') === '1'){
+    document.getElementById('demoNote').style.display = 'block';
+    document.getElementById('formTitle').textContent = 'Créer mon compte de démo';
+  }
+})();
+</script>
+
+</body>
+</html>

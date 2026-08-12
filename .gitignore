@@ -1,0 +1,20 @@
+# Base de données locale — contient les données de tes clients, ne doit jamais
+# partir sur GitHub. Sur Railway, la base vit dans le volume persistant /data,
+# pas dans le code.
+vitisens.db
+*.db
+
+# Fichiers Python
+__pycache__/
+*.pyc
+
+# Dossiers générés localement
+docs/
+
+# Mots de passe générés par le script (contient des identifiants en clair)
+mots_de_passe_clients.csv
+
+# Fichiers Windows / éditeurs
+Thumbs.db
+.DS_Store
+*.log

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MatuScore — Nouveau mot de passe</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="theme-color" content="#2D6A4F">
+<style>
+:root{--gd:#2D6A4F;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--gr:#6B7280;--bg:#f8faf8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:#1f2937;font-size:14px;min-height:100vh;display:flex;flex-direction:column}
+.header{background:var(--gd);color:#fff;padding:28px 20px;text-align:center}
+.header h1{font-size:22px;margin-bottom:4px}
+.header .by{font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.header .sub{font-size:13px;opacity:.9}
+.wrap{max-width:400px;margin:40px auto 0;padding:0 20px;flex:1}
+.card{background:#fff;border-radius:12px;padding:22px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.card h3{font-size:15px;color:var(--gd);margin-bottom:16px}
+label{display:block;font-size:12px;color:var(--gr);margin-bottom:4px;margin-top:14px;font-weight:600}
+label:first-of-type{margin-top:0}
+input{width:100%;padding:11px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px}
+input:focus{outline:none;border-color:var(--gm)}
+.btn{display:block;width:100%;padding:13px;border-radius:8px;border:none;font-size:14.5px;font-weight:700;cursor:pointer;margin-top:20px;background:var(--gd);color:#fff}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.msg{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;display:none}
+.msg.err{background:#FFEBEE;color:#C1121F;display:block}
+.msg.ok{background:#E8F5E9;color:#2D6A4F;display:block}
+.foot{text-align:center;margin-top:18px;font-size:13px;color:var(--gr)}
+.foot a{color:var(--gd);font-weight:600;text-decoration:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🍇 MatuScore</h1>
+  <div class="by">by VITI Sens</div>
+  <div class="sub">Nouveau mot de passe</div>
+</div>
+
+<div class="wrap">
+  <div class="card" id="cardForm">
+    <h3>Choisir un nouveau mot de passe</h3>
+    <form id="formReset">
+      <label>Nouveau mot de passe</label>
+      <input type="password" id="mdp1" name="new-password" autocomplete="new-password" placeholder="6 caractères minimum" minlength="6" required>
+      <label>Confirmer le mot de passe</label>
+      <input type="password" id="mdp2" name="new-password-confirm" autocomplete="new-password" placeholder="Retapez le mot de passe" minlength="6" required>
+      <button type="submit" class="btn" id="btnSubmit">Valider</button>
+      <div id="msg" class="msg"></div>
+    </form>
+  </div>
+  <div class="card" id="cardInvalide" style="display:none;text-align:center">
+    <p style="color:#C1121F;font-size:14px">Ce lien est invalide, expiré, ou a déjà été utilisé.</p>
+  </div>
+  <div class="foot"><a href="/connexion">← Retour à la connexion</a></div>
+</div>
+
+<script>
+const TOKEN = new URLSearchParams(window.location.search).get('token');
+if(!TOKEN){
+  document.getElementById('cardForm').style.display = 'none';
+  document.getElementById('cardInvalide').style.display = 'block';
+}
+
+document.getElementById('formReset').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('btnSubmit');
+  const msg = document.getElementById('msg');
+  msg.className = 'msg'; msg.textContent = '';
+
+  const mdp1 = document.getElementById('mdp1').value;
+  const mdp2 = document.getElementById('mdp2').value;
+  if(mdp1 !== mdp2){
+    msg.className = 'msg err'; msg.textContent = 'Les deux mots de passe ne correspondent pas.';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Validation...';
+  try{
+    const r = await fetch('/api/reinitialiser-mot-de-passe', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: TOKEN, nouveau_mot_de_passe: mdp1})
+    });
+    const d = await r.json();
+    if(!r.ok){
+      msg.className = 'msg err'; msg.textContent = d.error || 'Une erreur est survenue.';
+      btn.disabled = false; btn.textContent = 'Valider';
+      return;
+    }
+    msg.className = 'msg ok'; msg.textContent = 'Mot de passe mis à jour ! Redirection...';
+    setTimeout(()=>{ window.location.href = '/connexion'; }, 1200);
+  }catch(err){
+    msg.className = 'msg err'; msg.textContent = 'Erreur de connexion au serveur.';
+    btn.disabled = false; btn.textContent = 'Valider';
+  }
+});
+</script>
+
+</body>
+</html>

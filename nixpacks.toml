@@ -1,0 +1,5 @@
+# Bibliothèques système nécessaires à weasyprint (génération de vrais PDF,
+# pas des captures d'écran) pour les exports Exploitation / Itinéraire / Rendements.
+# Voir GUIDE_DEPLOIEMENT.md pour le détail.
+[phases.setup]
+aptPkgs = ["...", "libcairo2", "libpango-1.0-0", "libpangocairo-1.0-0", "libgdk-pixbuf2.0-0", "libffi-dev", "shared-mime-info", "fonts-liberation"]

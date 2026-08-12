@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VITI Sens — Dashboard</title>
+<style>
+:root{--gd:#2D6A4F;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--or:#E76F51;--obg:#FFF3E0;--rd:#C1121F;--rbg:#FFE0E0;--bl:#2196F3;--bbg:#E3F2FD;--gr:#6B7280;--bk:#1a1a1a;--wh:#FAFCF8;--r:10px;--sh:0 2px 12px rgba(45,106,79,0.08)}
+*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(160deg,#f7faf5,#eef5e8 40%,#f5f0e8);color:var(--bk);min-height:100vh}
+.hdr{background:var(--gd);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+.hdr h1{color:#fff;font-size:22px;font-weight:700}.hdr .sub{color:var(--gl);font-size:11px}
+.wrap{max-width:1400px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:2px;margin-bottom:16px;background:var(--wh);border-radius:var(--r);padding:3px;box-shadow:var(--sh);flex-wrap:wrap}
+.tab{padding:9px 14px;border:none;background:transparent;font-size:12px;font-weight:600;color:var(--gr);cursor:pointer;border-radius:7px;transition:.2s}.tab:hover{background:#f3f4f6}.tab.act{background:var(--gd);color:#fff}
+.tc{display:none}.tc.act{display:block}
+.card{background:var(--wh);border-radius:var(--r);box-shadow:var(--sh);padding:18px;margin-bottom:14px}
+.ct{font-size:15px;font-weight:700;color:var(--gd);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.btn{padding:7px 16px;border:none;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;transition:.2s;display:inline-flex;align-items:center;gap:4px}
+.btn:hover{transform:translateY(-1px)}.bg{background:var(--gd);color:#fff}.bo{background:var(--or);color:#fff}.bb{background:var(--bl);color:#fff}.br{background:var(--rd);color:#fff}
+.btn-sm{padding:5px 10px;font-size:10px}.btn-del{background:#fee;color:var(--rd);border:1px solid #fcc}
+table{width:100%;border-collapse:collapse;font-size:11px}th{background:var(--gd);color:#fff;padding:7px 8px;text-align:left;font-weight:600;font-size:10px}
+th.or{background:var(--or)}th.bl{background:var(--bl)}th.gm{background:var(--gm)}
+td{padding:7px 8px;border-bottom:1px solid #e5e7eb}tr:hover td{background:var(--gbg)}
+input,select,textarea{padding:5px 8px;border:1.5px solid #d1d5db;border-radius:5px;font-size:11px;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gd);box-shadow:0 0 0 3px rgba(45,106,79,.1)}
+textarea{min-height:50px;resize:vertical}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fg3{grid-template-columns:1fr 1fr 1fr}
+.fg label{display:block;font-size:10px;font-weight:600;color:var(--gr);margin-bottom:2px}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600}
+.b-bio{background:#e8f5e9;color:var(--gd)}.b-hve{background:var(--bbg);color:var(--bl)}.b-vdc{background:var(--obg);color:var(--or)}.b-conv{background:#f3f4f6;color:var(--gr)}
+.al{padding:10px 14px;border-radius:var(--r);margin-bottom:10px;font-size:11px;border-left:4px solid}
+.al-g{background:#e8f5e9;border-color:var(--gm)}.al-o{background:var(--obg);border-color:var(--or)}.al-r{background:var(--rbg);border-color:var(--rd)}.al-b{background:var(--bbg);border-color:var(--bl)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.g7{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.sc{background:var(--wh);border-radius:var(--r);padding:14px;box-shadow:var(--sh);text-align:center;border-left:4px solid var(--gd)}
+.sv{font-size:26px;font-weight:700;color:var(--gd)}.sl{color:var(--gr);font-size:10px;margin-top:2px}
+.sc.or{border-left-color:var(--or)}.sc.or .sv{color:var(--or)}.sc.bl{border-left-color:var(--bl)}.sc.bl .sv{color:var(--bl)}.sc.rd{border-left-color:var(--rd)}.sc.rd .sv{color:var(--rd)}
+.md{background:var(--wh);border-radius:var(--r);padding:10px;text-align:center;box-shadow:var(--sh)}
+.ri{margin-top:3px;padding:2px 5px;border-radius:4px;font-size:9px;font-weight:600;display:inline-block}
+.ri-n{background:#e8f5e9;color:#2e7d32}.ri-m{background:var(--obg);color:#e65100}.ri-h{background:var(--rbg);color:var(--rd)}
+.preview{background:var(--wh);border:2px solid var(--gl);border-radius:var(--r);padding:20px;max-height:70vh;overflow-y:auto}
+.preview h2{color:var(--gd);font-size:14px;border-bottom:2px solid var(--gd);padding-bottom:3px;margin:14px 0 6px}
+.preview .banner{background:var(--gd);color:#fff;padding:14px;border-radius:8px;text-align:center;margin-bottom:14px}
+.modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-bg.show{display:flex}.modal{background:#fff;border-radius:var(--r);padding:22px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal h3{color:var(--gd);margin-bottom:14px;font-size:16px}
+</style>
+</head>
+<body>
+<div class="hdr">
+ <div><h1>🍇 VITI Sens</h1><div class="sub">Dashboard — Campagne 2026</div></div>
+ <div style="display:flex;gap:8px;align-items:center">
+  <button class="btn bb btn-sm" onclick="fetchMeteo()">🌤️ Météo</button>
+  <button class="btn bo btn-sm" onclick="genTous()">📦 Tous les bulletins</button>
+  <label class="btn btn-sm" style="background:#f3f4f6;color:var(--bk);cursor:pointer"><input type="file" accept=".xlsx" style="display:none" onchange="importXL(this)">📂 Importer Excel</label>
+ </div>
+</div>
+<div class="wrap">
+ <div class="tabs" id="tabsBar"></div>
+ <div class="tc act" id="tc-home"></div>
+ <div class="tc" id="tc-clients"></div>
+ <div class="tc" id="tc-catalogue"></div>
+ <div class="tc" id="tc-prescriptions"></div>
+ <div class="tc" id="tc-bulletin"></div>
+ <div class="tc" id="tc-meteo"></div>
+ <div class="tc" id="tc-preview"></div>
+ <div class="tc" id="tc-generate"></div>
+ <div class="tc" id="tc-maturite"></div>
+ <div class="tc" id="tc-portails"></div>
+ <div class="tc" id="tc-outils"></div>
+</div>
+<div class="modal-bg" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal" id="MC"></div></div>
+
+<script>
+const T=['home','clients','catalogue','prescriptions','bulletin','meteo','preview','generate','portails','outils'];
+const TL=['📊 Accueil','👥 Clients','💊 Catalogue','📋 Prescriptions','📝 Bulletin Hebdo','🌤️ Météo','👁️ Prévisualiser','📄 Générer','🌿 Portails','🔧 Outils'];
+let CLIENTS=[],METEO=null;
+
+// Tabs
+const tb=document.getElementById('tabsBar');
+T.forEach((t,i)=>{const b=document.createElement('button');b.className='tab'+(i===0?' act':'');b.textContent=TL[i];b.onclick=()=>{
+ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('act'));b.classList.add('act');
+ document.querySelectorAll('.tc').forEach(x=>x.classList.remove('act'));document.getElementById('tc-'+t).classList.add('act');
+ if(t==='clients')loadClients();if(t==='catalogue')loadCat();if(t==='prescriptions')loadPresc();
+ if(t==='bulletin'){loadBH();setTimeout(loadComplPdfs,500);}if(t==='preview')loadPrevSel();if(t==='generate'){loadGenSel();setTimeout(genTokens,300);}if(t==='maturite')loadMaturiteAdmin();
+ if(t==='portails')loadPortails();
+ if(t==='outils')loadOutils();
+};tb.appendChild(b);});
+
+// API
+async function api(path,opts={}){return fetch(path,{headers:{'Content-Type':'application/json'},...opts});}
+async function aj(path,opts={}){return(await api(path,opts)).json();}
+function closeModal(){document.getElementById('modal').classList.remove('show');}
+
+// Init
+async function init(){
+ CLIENTS=await aj('/api/clients');
+ const cat=await aj('/api/catalogue');const presc=await aj('/api/prescriptions');
+ document.getElementById('tc-home').innerHTML=`
+  <div class="g4">
+   <div class="sc"><div class="sv">${CLIENTS.length}</div><div class="sl">Clients</div></div>
+   <div class="sc or"><div class="sv">${cat.length}</div><div class="sl">Produits</div></div>
+   <div class="sc bl"><div class="sv">${presc.length}</div><div class="sl">Prescriptions</div></div>
+   <div class="sc rd"><div class="sv">${CLIENTS.filter(c=>c.certification==='Bio').length}</div><div class="sl">Clients Bio</div></div>
+  </div><div style="height:12px"></div>
+  <div id="homeAlerts"></div>
+  <div class="g2">
+   <div class="card"><div class="ct">🌤️ Météo</div><div id="meteoQ"><button class="btn bb" onclick="fetchMeteo()">Charger</button></div></div>
+   <div class="card"><div class="ct">🍄 Risques</div><div id="riskQ"><p style="color:var(--gr);font-size:10px">Chargez la météo</p></div></div>
+  </div>`;
+ let al='';CLIENTS.filter(c=>c.certification==='Bio'&&c.cu_cumule>3000).forEach(c=>{al+=`<div class="al al-r"><strong>⚠️ ${c.exploitation}</strong> — Cu ${c.cu_cumule} g/ha</div>`;});
+ document.getElementById('homeAlerts').innerHTML=al;
+}
+init();
+
+// ===== CLIENTS =====
+async function loadClients(){
+ CLIENTS=await aj('/api/clients');
+ let h='<div class="card"><div class="ct"><span>👥 Clients</span><button class="btn bg btn-sm" onclick="showCF()">+ Ajouter</button></div>';
+ h+='<table><tr><th>ID</th><th>Exploitation</th><th>Commune</th><th>Certif.</th><th>Surface</th><th>Tél.</th><th>Cu</th><th>Actions</th></tr>';
+ CLIENTS.forEach(c=>{const bc=c.certification==='Bio'?'b-bio':c.certification==='HVE'?'b-hve':c.certification==='VDC'?'b-vdc':'b-conv';
+  h+=`<tr><td>${c.id}</td><td><strong>${c.exploitation}</strong></td><td>${c.commune||''}</td><td><span class="badge ${bc}">${c.certification||'Conv.'}</span></td><td>${c.surface||''} ha</td><td style="font-size:9px">${c.telephone||'—'}</td><td>${c.certification==='Bio'?(c.cu_cumule||0)+' g/ha':'—'}</td><td><button class="btn btn-sm bg" onclick="editC('${c.id}')">✏️</button> <button class="btn btn-sm btn-del" onclick="delC('${c.id}')">🗑</button></td></tr>`;
+ });h+='</table></div>';document.getElementById('tc-clients').innerHTML=h;
+}
+function showCF(d){d=d||{};document.getElementById('MC').innerHTML=`<h3>${d.id?'Modifier':'Ajouter'} client</h3>
+<div class="fg"><div><label>ID</label><input id="cf_id" value="${d.id||''}" ${d.id?'readonly':''}></div><div><label>Exploitation</label><input id="cf_exp" value="${d.exploitation||''}"></div>
+<div><label>Interlocuteur</label><input id="cf_int" value="${d.interlocuteur||''}"></div><div><label>Commune</label><input id="cf_com" value="${d.commune||''}"></div>
+<div><label>Certification</label><select id="cf_cert">${['Conventionnel','HVE','VDC','Bio','Terra Vitis'].map(o=>`<option ${d.certification===o?'selected':''}>${o}</option>`).join('')}</select></div>
+<div><label>Surface (ha)</label><input type="number" id="cf_sur" value="${d.surface||''}"></div>
+<div><label>% Chard</label><input type="number" id="cf_ch" value="${d.pct_chard||0}"></div><div><label>% PN</label><input type="number" id="cf_pn" value="${d.pct_pn||0}"></div>
+<div><label>% Meunier</label><input type="number" id="cf_me" value="${d.pct_meunier||0}"></div><div><label>Cu cumulé (g/ha)</label><input type="number" id="cf_cu" value="${d.cu_cumule||0}"></div>
+<div><label>Parcelles mildiou</label><input id="cf_pm" value="${d.parcelles_mildiou||''}"></div><div><label>Parcelles oïdium</label><input id="cf_po" value="${d.parcelles_oidium||''}"></div>
+<div><label>Email</label><input id="cf_em" value="${d.email||''}"></div><div><label>Téléphone</label><input id="cf_tel" value="${d.telephone||''}" placeholder="0612345678"></div>
+<div><label>Latitude</label><input id="cf_lat" value="${d.latitude||''}" placeholder="49.1035" type="number" step="0.0001"></div><div><label>Longitude</label><input id="cf_lon" value="${d.longitude||''}" placeholder="3.9812" type="number" step="0.0001"></div>
+<div style="grid-column:span 2"><label>Notes</label><textarea id="cf_no">${d.notes||''}</textarea></div></div>
+<div style="margin-top:12px"><button class="btn bg" onclick="saveC('${d.id||''}')">${d.id?'Modifier':'Ajouter'}</button> <button class="btn btn-sm" style="background:#f3f4f6" onclick="closeModal()">Annuler</button></div>`;
+document.getElementById('modal').classList.add('show');}
+async function editC(id){showCF(CLIENTS.find(c=>c.id===id));}
+async function saveC(eid){const d={id:document.getElementById('cf_id').value,exploitation:document.getElementById('cf_exp').value,interlocuteur:document.getElementById('cf_int').value,commune:document.getElementById('cf_com').value,certification:document.getElementById('cf_cert').value,surface:parseFloat(document.getElementById('cf_sur').value)||0,pct_chard:parseFloat(document.getElementById('cf_ch').value)||0,pct_pn:parseFloat(document.getElementById('cf_pn').value)||0,pct_meunier:parseFloat(document.getElementById('cf_me').value)||0,cu_cumule:parseFloat(document.getElementById('cf_cu').value)||0,parcelles_mildiou:document.getElementById('cf_pm').value,parcelles_oidium:document.getElementById('cf_po').value,email:document.getElementById('cf_em').value,telephone:document.getElementById('cf_tel').value,latitude:parseFloat(document.getElementById('cf_lat').value)||null,longitude:parseFloat(document.getElementById('cf_lon').value)||null,notes:document.getElementById('cf_no').value};
+if(eid)await api(`/api/clients/${eid}`,{method:'PUT',body:JSON.stringify(d)});else await api('/api/clients',{method:'POST',body:JSON.stringify(d)});closeModal();loadClients();init();}
+async function delC(id){if(confirm('Supprimer '+id+' ?')){await api(`/api/clients/${id}`,{method:'DELETE'});loadClients();init();}}
+
+// ===== CATALOGUE =====
+async function loadCat(){
+ const cat=document.getElementById('fc_cat')?.value||'all';
+ const cib=document.getElementById('fc_cib')?.value||'all';
+ const cer=document.getElementById('fc_cer')?.value||'all';
+ const prods=await aj(`/api/catalogue?categorie=${cat}&cible=${cib}&certification=${cer}`);
+ let h=`<div class="card"><div class="ct"><span>💊 Catalogue Produits & MFSC</span><div><button class="btn bo btn-sm" onclick="showPF()">+ Phyto</button> <button class="btn btn-sm" style="background:var(--gm);color:#fff" onclick="showMF()">+ MFSC</button></div></div>
+ <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
+  <select id="fc_cat" onchange="loadCat()" style="width:auto"><option value="all">Toutes catégories</option><option value="Phyto">🧪 Phyto</option><option value="Fertilisant foliaire">🌿 Fertilisants</option><option value="Biostimulant">🧬 Biostimulants</option><option value="Amendement">🌱 Amendements</option><option value="Adjuvant">⚗️ Adjuvants</option></select>
+  <select id="fc_cib" onchange="loadCat()" style="width:auto"><option value="all">Toutes cibles</option><option value="mildiou">Mildiou</option><option value="dium">Oïdium</option><option value="botrytis">Botrytis</option><option value="nutrition">Nutrition</option></select>
+  <select id="fc_cer" onchange="loadCat()" style="width:auto"><option value="all">Toutes certif.</option><option value="Bio">Bio</option><option value="HVE">HVE</option></select>
+ </div>
+ <table><tr><th class="or">ID</th><th class="or">Cat.</th><th class="or">Produit</th><th class="or">Composition</th><th class="or">Cible</th><th class="or">Type</th><th class="or">Dose</th><th class="or">Bio</th><th class="or">Opt.</th><th class="or">Actions</th></tr>`;
+ prods.forEach(p=>{const ic=p.categorie==='Phyto'?'🧪':p.categorie==='Fertilisant foliaire'?'🌿':p.categorie==='Biostimulant'?'🧬':'📦';
+  const comp=p.substance_active||p.composition_npk||p.oligo_elements||'';
+  h+=`<tr><td>${p.id}</td><td>${ic}</td><td><strong>${p.nom}</strong></td><td style="font-size:9px">${comp}</td><td>${p.cible||p.objectif||''}</td><td>${p.type_cps||p.type_mfsc||''}</td><td style="font-size:9px">${p.dose_homologuee||''}</td><td>${p.compatible_bio?'✅':'❌'}</td><td style="font-weight:700;${p.option_abc==='A'?'background:#e8f5e9':''}">${p.option_abc||''}</td><td><button class="btn btn-sm bg" onclick='editProd(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button> <button class="btn btn-sm btn-del" onclick="delP('${p.id}')">🗑</button></td></tr>`;
+ });h+=`</table><p style="margin-top:6px;font-size:10px;color:var(--gr)">${prods.length} produit(s)</p></div>`;
+ document.getElementById('tc-catalogue').innerHTML=h;
+}
+// Préfixes par cible/catégorie
+const ID_PREFIX = {
+ 'Mildiou':'M','Oïdium':'O','Botrytis':'B','Tordeuses':'T','Black rot':'BR','Flavescence dorée':'FD',
+ 'Fertilisant foliaire':'FF','Biostimulant':'BS','Amendement':'AM','Engrais':'EN','Adjuvant':'AJ'
+};
+function nextId(prefix){
+ const existing = CATALOGUE.filter(p=>p.id && p.id.startsWith(prefix)).map(p=>{
+  const num=parseInt(p.id.replace(prefix,''));return isNaN(num)?0:num;});
+ const max = existing.length>0 ? Math.max(...existing) : 0;
+ return prefix + String(max+1).padStart(3,'0');
+}
+function updatePhytoId(){
+ const cible=document.getElementById('pf_cib')?.value||'Mildiou';
+ const prefix=ID_PREFIX[cible]||'X';
+ document.getElementById('pf_id').value=nextId(prefix);
+}
+function updateMfscId(){
+ const cat=document.getElementById('mf_cat')?.value||'Fertilisant foliaire';
+ const prefix=ID_PREFIX[cat]||'XX';
+ document.getElementById('mf_id').value=nextId(prefix);
+}
+
+function showPF(){
+ const defaultId=nextId('M');
+ document.getElementById('MC').innerHTML=`<h3>Ajouter un produit phyto</h3>
+<div class="fg fg3"><div><label>ID (auto)</label><input id="pf_id" value="${defaultId}" readonly style="background:#f3f4f6;font-weight:700"></div><div><label>Nom</label><input id="pf_nom"></div><div><label>SA</label><input id="pf_sa"></div>
+<div><label>Cible</label><select id="pf_cib" onchange="updatePhytoId()"><option>Mildiou</option><option>Oïdium</option><option>Botrytis</option><option>Tordeuses</option><option>Black rot</option><option>Flavescence dorée</option></select></div>
+<div><label>Type</label><select id="pf_ty"><option>Contact</option><option>Pénétrant</option><option>Systémique</option><option>Biocontrôle</option><option>SDN</option><option>Insecticide</option></select></div>
+<div><label>Dose</label><input id="pf_do"></div><div><label>DAR</label><input type="number" id="pf_dar"></div><div><label>DRE</label><input type="number" id="pf_dre"></div>
+<div><label>ZNT</label><input type="number" id="pf_znt"></div><div><label>Bio</label><select id="pf_bio"><option value="0">Non</option><option value="1">Oui</option></select></div>
+<div><label>Option</label><select id="pf_opt"><option>A</option><option>B</option><option>C</option></select></div>
+<div><label>Famille chimique</label><input id="pf_fam" placeholder="Anilide, CAA, QoI..."></div>
+<div><label>Partenaire mélange</label><input id="pf_part" placeholder="Folpel, Cuivre..."></div>
+<div><label>Conc. MA (g/kg ou g/L)</label><input type="number" id="pf_conc" placeholder="800"></div><div><label>Position</label><input id="pf_pos" placeholder="T1"></div>
+<div><label>Notes</label><textarea id="pf_no"></textarea></div></div>
+<button class="btn bo" style="margin-top:10px" onclick="savePF()">Ajouter</button> <button class="btn btn-sm" style="background:#f3f4f6" onclick="closeModal()">Annuler</button>`;
+document.getElementById('modal').classList.add('show');}
+async function savePF(){await api('/api/catalogue',{method:'POST',body:JSON.stringify({id:document.getElementById('pf_id').value,nom:document.getElementById('pf_nom').value,categorie:'Phyto',substance_active:document.getElementById('pf_sa').value,famille:document.getElementById('pf_fam').value,partenaire:document.getElementById('pf_part').value,cible:document.getElementById('pf_cib').value,type_cps:document.getElementById('pf_ty').value,dose_homologuee:document.getElementById('pf_do').value,dar:parseInt(document.getElementById('pf_dar').value)||0,dre:parseInt(document.getElementById('pf_dre').value)||0,znt:parseInt(document.getElementById('pf_znt').value)||0,compatible_bio:document.getElementById('pf_bio').value==='1',option_abc:document.getElementById('pf_opt').value,concentration_ma:parseFloat(document.getElementById('pf_conc').value)||0,position_strategie:document.getElementById('pf_pos').value,notes:document.getElementById('pf_no').value})});closeModal();loadCat();loadCatalogueCache();}
+
+function showMF(){
+ const defaultId=nextId('FF');
+ document.getElementById('MC').innerHTML=`<h3>Ajouter un Fertilisant / MFSC</h3>
+<div class="fg fg3"><div><label>ID (auto)</label><input id="mf_id" value="${defaultId}" readonly style="background:#f3f4f6;font-weight:700"></div><div><label>Nom</label><input id="mf_nom"></div>
+<div><label>Catégorie</label><select id="mf_cat" onchange="updateMfscId()"><option>Fertilisant foliaire</option><option>Biostimulant</option><option>Amendement</option><option>Engrais</option><option>Adjuvant</option></select></div>
+<div><label>Type MFSC</label><select id="mf_ty"><option>Engrais foliaire</option><option>Biostimulant végétal</option><option>Biostimulant microbien</option><option>Correcteur carence</option><option>Amendement organique</option><option>Adjuvant</option></select></div>
+<div><label>Composition NPK</label><input id="mf_npk" placeholder="4-3-6"></div><div><label>Oligo-éléments</label><input id="mf_ol" placeholder="Fe, Mn, Zn, B"></div>
+<div><label>SA / Principe actif</label><input id="mf_sa" placeholder="Extraits algues"></div>
+<div><label>Objectif</label><select id="mf_obj"><option>Nutrition générale</option><option>Correction carence Fe</option><option>Correction carence Mn/Zn</option><option>Correction carence Mg</option><option>Anti-stress</option><option>Floraison-nouaison</option><option>Qualité moûts</option><option>Activité sol</option></select></div>
+<div><label>Dose</label><input id="mf_do" placeholder="3 L/ha"></div><div><label>Stade</label><select id="mf_st"><option>Tous stades</option><option>Débourrement</option><option>3-4 feuilles</option><option>Pré-floraison</option><option>Floraison</option><option>Véraison</option><option>Post-vendange</option></select></div>
+<div><label>Bio</label><select id="mf_bio"><option value="1">Oui</option><option value="0">Non</option></select></div><div><label>Prix €/ha</label><input id="mf_px"></div>
+<div><label>Notes</label><textarea id="mf_no"></textarea></div></div>
+<button class="btn" style="background:var(--gm);color:#fff;margin-top:10px" onclick="saveMF()">Ajouter</button> <button class="btn btn-sm" style="background:#f3f4f6" onclick="closeModal()">Annuler</button>`;
+document.getElementById('modal').classList.add('show');}
+async function saveMF(){await api('/api/catalogue',{method:'POST',body:JSON.stringify({id:document.getElementById('mf_id').value,nom:document.getElementById('mf_nom').value,categorie:document.getElementById('mf_cat').value,type_mfsc:document.getElementById('mf_ty').value,composition_npk:document.getElementById('mf_npk').value,oligo_elements:document.getElementById('mf_ol').value,substance_active:document.getElementById('mf_sa').value,objectif:document.getElementById('mf_obj').value,cible:document.getElementById('mf_obj').value,dose_homologuee:document.getElementById('mf_do').value,stade_application:document.getElementById('mf_st').value,compatible_bio:document.getElementById('mf_bio').value==='1',prix:document.getElementById('mf_px').value,notes:document.getElementById('mf_no').value})});closeModal();loadCat();loadCatalogueCache();}
+function editProd(p){
+ const isMFSC = p.categorie && p.categorie!=='Phyto';
+ document.getElementById('MC').innerHTML=`<h3>Modifier : ${p.nom||''}</h3>
+<div class="fg fg3">
+ <div><label>ID</label><input id="ep_id" value="${p.id||''}" readonly style="background:#f3f4f6"></div>
+ <div><label>Nom</label><input id="ep_nom" value="${p.nom||''}"></div>
+ <div><label>Catégorie</label><select id="ep_cat">${['Phyto','Fertilisant foliaire','Biostimulant','Amendement','Engrais','Adjuvant'].map(o=>`<option ${p.categorie===o?'selected':''}>${o}</option>`).join('')}</select></div>
+ <div><label>Substance active</label><input id="ep_sa" value="${p.substance_active||''}"></div>
+ <div><label>Cible</label><input id="ep_cib" value="${p.cible||''}"></div>
+ <div><label>Type</label><input id="ep_ty" value="${p.type_cps||p.type_mfsc||''}"></div>
+ <div><label>Famille chimique</label><input id="ep_fam" value="${p.famille||''}"></div>
+ <div><label>Partenaire mélange</label><input id="ep_part" value="${p.partenaire||''}"></div>
+ <div><label>Dose homologuée</label><input id="ep_do" value="${p.dose_homologuee||''}"></div>
+ <div><label>Nb max appli</label><input id="ep_nba" value="${p.nb_max_appli||''}"></div>
+ <div><label>DAR (j)</label><input type="number" id="ep_dar" value="${p.dar||''}"></div>
+ <div><label>DRE (h)</label><input type="number" id="ep_dre" value="${p.dre||''}"></div>
+ <div><label>ZNT (m)</label><input type="number" id="ep_znt" value="${p.znt||''}"></div>
+ <div><label>Bio</label><select id="ep_bio"><option value="1" ${p.compatible_bio?'selected':''}>Oui</option><option value="0" ${!p.compatible_bio?'selected':''}>Non</option></select></div>
+ <div><label>Option A/B/C</label><select id="ep_opt"><option value="">—</option>${['A','B','C'].map(o=>`<option ${p.option_abc===o?'selected':''}>${o}</option>`).join('')}</select></div>
+ <div><label>Conc. MA (g/kg ou g/L)</label><input type="number" id="ep_conc" value="${p.concentration_ma||0}"></div>
+ <div><label>Position stratégie</label><input id="ep_pos" value="${p.position_strategie||''}"></div>
+ <div><label>Prix €/ha</label><input id="ep_px" value="${p.prix||''}"></div>
+ ${isMFSC?`<div><label>Composition NPK</label><input id="ep_npk" value="${p.composition_npk||''}"></div>
+ <div><label>Oligo-éléments</label><input id="ep_ol" value="${p.oligo_elements||''}"></div>
+ <div><label>Objectif</label><input id="ep_obj" value="${p.objectif||''}"></div>
+ <div><label>Stade application</label><input id="ep_st" value="${p.stade_application||''}"></div>`:''}
+ <div style="grid-column:span 2"><label>Notes</label><textarea id="ep_no">${p.notes||''}</textarea></div>
+</div>
+<div style="margin-top:12px"><button class="btn bg" onclick="saveProdEdit()">Enregistrer</button> <button class="btn btn-sm" style="background:#f3f4f6" onclick="closeModal()">Annuler</button></div>`;
+document.getElementById('modal').classList.add('show');
+}
+async function saveProdEdit(){
+ const id=document.getElementById('ep_id').value;
+ await api('/api/catalogue',{method:'POST',body:JSON.stringify({
+  id:id, nom:document.getElementById('ep_nom').value,
+  categorie:document.getElementById('ep_cat').value,
+  substance_active:document.getElementById('ep_sa').value,
+  cible:document.getElementById('ep_cib').value,
+  type_cps:document.getElementById('ep_ty').value,
+  famille:document.getElementById('ep_fam').value,
+  partenaire:document.getElementById('ep_part').value,
+  dose_homologuee:document.getElementById('ep_do').value,
+  nb_max_appli:document.getElementById('ep_nba').value,
+  dar:parseInt(document.getElementById('ep_dar').value)||null,
+  dre:parseInt(document.getElementById('ep_dre').value)||null,
+  znt:parseInt(document.getElementById('ep_znt').value)||null,
+  compatible_bio:document.getElementById('ep_bio').value==='1',
+  option_abc:document.getElementById('ep_opt').value,
+  concentration_ma:parseFloat(document.getElementById('ep_conc').value)||0,
+  position_strategie:document.getElementById('ep_pos').value,
+  prix:document.getElementById('ep_px').value,
+  composition_npk:document.getElementById('ep_npk')?.value||'',
+  oligo_elements:document.getElementById('ep_ol')?.value||'',
+  objectif:document.getElementById('ep_obj')?.value||'',
+  stade_application:document.getElementById('ep_st')?.value||'',
+  notes:document.getElementById('ep_no').value
+ })});
+ closeModal();loadCat();loadCatalogueCache();
+}
+async function delP(id){if(confirm('Supprimer ?')){await api(`/api/catalogue/${id}`,{method:'DELETE'});loadCat();loadCatalogueCache();}}
+
+// ===== PRESCRIPTIONS =====
+async function loadPresc(){
+ const allPresc=await aj('/api/prescriptions');
+ const cid=document.getElementById('fp_cl')?.value||'';
+ const fpass=document.getElementById('fp_pa')?.value||'';
+ const fprod=document.getElementById('fp_pr')?.value||'';
+ // Filtrer
+ let presc=allPresc;
+ if(cid) presc=presc.filter(p=>p.id_client===cid);
+ if(fpass) presc=presc.filter(p=>p.passage===fpass);
+ if(fprod) presc=presc.filter(p=>(p.nom_produit||'').toLowerCase().includes(fprod.toLowerCase()));
+ // Listes pour les filtres
+ let selCl='<option value="">Tous les clients</option>';CLIENTS.forEach(c=>{selCl+=`<option value="${c.id}" ${cid===c.id?'selected':''}>${c.exploitation}</option>`;});
+ const passages=[...new Set(allPresc.map(p=>p.passage).filter(Boolean))].sort();
+ let selPa='<option value="">Tous les passages</option>';passages.forEach(p=>{selPa+=`<option ${fpass===p?'selected':''}>${p}</option>`;});
+ const produits=[...new Set(allPresc.map(p=>p.nom_produit).filter(Boolean))].sort();
+ let selPr='<option value="">Tous les produits</option>';produits.forEach(p=>{selPr+=`<option ${fprod===p?'selected':''}>${p}</option>`;});
+ let h=`<div class="card"><div class="ct"><span>📋 Prescriptions</span><button class="btn br btn-sm" onclick="showXF()">+ Ajouter</button></div>
+ <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+  <select id="fp_cl" onchange="loadPresc()" style="width:auto">${selCl}</select>
+  <select id="fp_pa" onchange="loadPresc()" style="width:auto">${selPa}</select>
+  <select id="fp_pr" onchange="loadPresc()" style="width:auto">${selPr}</select>
+ </div>
+ <table><tr><th class="or">Client</th><th class="or">Exploitation</th><th class="or">Cible</th><th class="or">Passage</th><th class="or">Produit</th><th class="or">Dose homol.</th><th class="or">DOSE PRESCRITE</th><th class="or">Vol.</th><th class="or">Obs.</th><th class="or">Act.</th></tr>`;
+ presc.forEach(p=>{const cu=p.dose_prescrite&&p.dose_prescrite!==p.dose_homologuee;
+  const cl=CLIENTS.find(c=>c.id===p.id_client);
+  h+=`<tr><td style="font-size:9px;color:var(--gr)">${p.id_client}</td><td><strong>${cl?cl.exploitation:p.id_client}</strong></td><td>${p.cible||''}</td><td><strong>${p.passage||''}</strong></td><td><strong>${p.nom_produit||''}</strong></td><td style="color:var(--gr);font-size:9px">${p.dose_homologuee||''}</td><td style="font-weight:700;${cu?'color:var(--rd);background:#fffde7':''}">${p.dose_prescrite||'[?]'}</td><td>${p.volume_bouillie||''}</td><td style="font-size:9px;color:var(--gr)">${p.observations||''}</td><td><button class="btn btn-sm bg" onclick='editPresc(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button> <button class="btn btn-sm btn-del" onclick="delX(${p.id})">🗑</button></td></tr>`;
+ });h+=`</table><p style="margin-top:6px;font-size:10px;color:var(--gr)">${presc.length} prescription(s) sur ${allPresc.length}</p></div>`;
+ document.getElementById('tc-prescriptions').innerHTML=h;
+}
+let CATALOGUE=[];
+async function loadCatalogueCache(){CATALOGUE=await aj('/api/catalogue');}
+loadCatalogueCache();
+
+let xfCount=1; // nombre de lignes produit dans le formulaire
+
+async function showXF(){
+ xfCount=1;
+ let chk='';CLIENTS.forEach(c=>{chk+=`<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:11px;cursor:pointer;border-bottom:1px solid #f3f4f6"><input type="checkbox" class="xf_cl_chk" value="${c.id}" data-cert="${c.certification||'Conventionnel'}" checked style="flex-shrink:0;width:16px;height:16px"> <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.exploitation}</span> <span class="badge ${c.certification==='Bio'?'b-bio':c.certification==='HVE'?'b-hve':c.certification==='VDC'?'b-vdc':'b-conv'}" style="flex-shrink:0;margin-left:auto">${c.certification||'Conv.'}</span></label>`;});
+// Déterminer le prochain passage par client sélectionné
+ const existingPassages=new Set();
+ const allPresc=await aj('/api/prescriptions');
+ // Stocker les prescriptions par client pour auto-détection
+ window._allPresc=allPresc;
+ // Exclure les passages annulés du calcul du prochain passage
+ const activePresc=allPresc.filter(p=>p.statut!=='annulé');
+ activePresc.forEach(p=>{if(p.passage)existingPassages.add(p.passage);});
+ // Passages annulés sans équivalent actif = récupérables
+ const annulesUniq=new Set(allPresc.filter(p=>p.statut==='annulé').map(p=>p.passage).filter(Boolean));
+ const recuperables=[...annulesUniq].filter(p=>!existingPassages.has(p))
+  .filter(p=>p.startsWith('T')&&!isNaN(p.slice(1)))
+  .sort((a,b)=>parseInt(a.slice(1))-parseInt(b.slice(1)));
+ const passageOrder=['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12','Rattrapage','Compl.','Flo. (A)','Flo. (B)','Fermeture','Véraison','Post-vendange'];
+ let nextPassage='T1';
+ if(recuperables.length){
+  nextPassage=recuperables[0]; // réutiliser le numéro annulé
+ } else {
+  const allTs=[...existingPassages].filter(p=>p.startsWith('T')&&!isNaN(p.slice(1))).map(p=>parseInt(p.slice(1)));
+  if(allTs.length) nextPassage='T'+(Math.max(...allTs)+1);
+ }
+ let passageOpts=passageOrder.map(p=>`<option>${p}</option>`).join('');
+
+document.getElementById('MC').innerHTML=`<h3>Ajouter une prescription (jusqu'à 5 produits)</h3>
+<div style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+<div><label>Clients <button class="btn btn-sm" style="background:var(--bbg);color:var(--bl);margin-left:6px" onclick="document.querySelectorAll('.xf_cl_chk').forEach(c=>c.checked=true);xfRefreshAll()">Tous</button> <button class="btn btn-sm" style="background:#f3f4f6;margin-left:2px" onclick="document.querySelectorAll('.xf_cl_chk').forEach(c=>c.checked=false)">Aucun</button></label>
+ <div style="max-height:180px;overflow-y:auto;border:1px solid #d1d5db;border-radius:5px;padding:4px;background:#fff" onchange="xfRefreshAll()">${chk}</div>
+ <div style="font-size:9px;color:var(--gr);margin-top:3px" id="xfClInfo">Tous sélectionnés — filtrage sur la certification la plus restrictive</div>
+</div>
+<div><label>Passage</label><input id="xf_pa" list="xf_pa_list" value="${nextPassage}" placeholder="T1, T2..." style="width:100%"><datalist id="xf_pa_list">${passageOpts}</datalist></div>
+<div><label>Vol. (L/ha)</label><input id="xf_vo" placeholder="180" value="180"></div>
+<div><label>Date préconisée</label><input type="date" id="xf_dp_date"></div>
+<div><label>Observations</label><input id="xf_ob" placeholder="Optionnel"></div>
+</div>
+<div id="xfProds"></div>
+<div style="margin-top:8px;display:flex;gap:8px">
+ <button class="btn btn-sm" style="background:var(--bbg);color:var(--bl)" onclick="xfAddRow()">+ Ajouter un produit</button>
+ <span style="font-size:10px;color:var(--gr);align-self:center" id="xfProdCount">1/5 produit(s)</span>
+</div>
+<div style="margin-top:14px">
+ <button class="btn br" onclick="saveXMulti()">Enregistrer la prescription</button>
+ <button class="btn btn-sm" style="background:#f3f4f6;margin-left:6px" onclick="closeModal()">Annuler</button>
+</div>`;
+document.getElementById('modal').classList.add('show');
+xfAddProdRow(1);
+}
+
+function xfAddRow(){
+ if(xfCount>=5) return;
+ xfCount++;
+ xfAddProdRow(xfCount);
+ document.getElementById('xfProdCount').textContent=xfCount+'/5 produit(s)';
+}
+
+function xfAddProdRow(n){
+ const container=document.getElementById('xfProds');
+ const div=document.createElement('div');
+ div.id='xfRow'+n;
+ div.style.cssText='border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px;background:'+(n%2===0?'#fafafa':'#fff');
+ div.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+  <strong style="font-size:11px;color:var(--gd)">Produit ${n}</strong>
+  ${n>1?'<button class="btn btn-sm btn-del" onclick="xfRemoveRow('+n+')">✕</button>':''}
+ </div>
+ <div class="fg fg3">
+  <div><label>Cible</label><select id="xf_ci${n}" onchange="xfUpdateFamilles(${n})"><option>Mildiou</option><option>Oïdium</option><option>Botrytis</option><option>Tordeuses</option><option>Flavescence dorée</option><option>Nutrition</option><option>Correction carence</option><option>Anti-stress</option><option>Floraison-nouaison</option><option>Fertilisant foliaire</option><option>Biostimulant</option></select></div>
+  <div><label>Famille chimique</label><select id="xf_fm${n}" onchange="xfUpdateMolecules(${n})"><option value="">— Toutes —</option></select></div>
+  <div><label>Molécule (SA)</label><select id="xf_mo${n}" onchange="xfUpdatePartenaires(${n})"><option value="">— Toutes —</option></select></div>
+  <div><label>Partenaire de mélange</label><select id="xf_pa2${n}" onchange="xfUpdateSpecialites(${n})"><option value="">— Tous —</option></select></div>
+  <div><label>Spécialité commerciale</label><select id="xf_pr${n}" onchange="xfFillRow(${n})"><option value="">— Choisir —</option></select></div>
+  <div><label>DOSE PRESCRITE</label><input id="xf_dp${n}" style="border-color:var(--rd);font-weight:700" placeholder="Votre dose"></div>
+ </div>
+ <div class="fg" style="margin-top:4px">
+  <div><label>SA (auto)</label><input id="xf_sa${n}" readonly style="background:#f3f4f6;font-size:10px"></div>
+  <div><label>Type (auto)</label><input id="xf_ty${n}" readonly style="background:#f3f4f6"></div>
+  <div><label>Dose homol. (auto)</label><input id="xf_dh${n}" readonly style="background:#f3f4f6"></div>
+  <div><label>Famille (auto)</label><input id="xf_fam${n}" readonly style="background:#f3f4f6;font-size:10px"></div>
+ </div>`;
+ container.appendChild(div);
+ xfUpdateFamilles(n);
+}
+
+function xfRemoveRow(n){
+ const el=document.getElementById('xfRow'+n);
+ if(el) el.remove();
+ xfCount--;
+ document.getElementById('xfProdCount').textContent=xfCount+'/5 produit(s)';
+}
+
+function xfRefreshAll(){
+ const checked=document.querySelectorAll('.xf_cl_chk:checked');
+ const nb=checked.length;
+ const info=document.getElementById('xfClInfo');
+ if(info) info.textContent=nb===0?'⚠️ Aucun client sélectionné':nb===1?`1 client — ${checked[0].parentElement.textContent.trim()}`:`${nb} clients sélectionnés`;
+ // Auto-détecter le prochain passage pour les clients sélectionnés
+ const selectedIds=new Set([...checked].map(c=>c.value));
+ if(window._allPresc && selectedIds.size > 0){
+  const clientPresc=(window._allPresc||[]).filter(p=>selectedIds.has(p.id_client));
+  // Passages actifs (non annulés)
+  const activePassages=clientPresc.filter(p=>p.statut!=='annulé').map(p=>p.passage).filter(Boolean);
+  const activeSet=new Set(activePassages);
+  // Passages annulés récupérables (annulé sans actif correspondant)
+  const annulesRecup=clientPresc.filter(p=>p.statut==='annulé'&&p.passage&&!activeSet.has(p.passage))
+   .map(p=>p.passage).filter(p=>p.startsWith('T')&&!isNaN(p.slice(1)))
+   .sort((a,b)=>parseInt(a.slice(1))-parseInt(b.slice(1)));
+  const paInput=document.getElementById('xf_pa');
+  if(paInput){
+   if(annulesRecup.length){ paInput.value=annulesRecup[0]; }
+   else{
+    const clientTs=activePassages.filter(p=>p.startsWith('T')&&!isNaN(p.slice(1))).map(p=>parseInt(p.slice(1)));
+    if(clientTs.length){ paInput.value='T'+(Math.max(...clientTs)+1); }
+    else{ paInput.value='T1'; }
+   }
+  }
+ }
+ for(let i=1;i<=5;i++){if(document.getElementById('xf_ci'+i)) xfUpdateFamilles(i);}
+}
+
+function xfGetCert(){
+ const certs=[...document.querySelectorAll('.xf_cl_chk:checked')].map(c=>c.dataset.cert);
+ if(certs.includes('Bio')) return 'Bio';
+ if(certs.includes('HVE')) return 'HVE';
+ if(certs.includes('VDC')) return 'VDC';
+ return 'Conventionnel';
+}
+
+// Filtre le catalogue selon cible + certification
+function xfGetFiltered(n){
+ const cert=xfGetCert();
+ const cibleSel=document.getElementById('xf_ci'+n);
+ if(!cibleSel) return [];
+ const cible=cibleSel.value.toLowerCase();
+ return CATALOGUE.filter(p=>{
+  if(cert==='Bio' && !p.compatible_bio) return false;
+  if(cert==='HVE' && !p.compatible_hve) return false;
+  const pc=(p.cible||'').toLowerCase();
+  const po=(p.objectif||'').toLowerCase();
+  const pcat=(p.categorie||'').toLowerCase();
+  if(cible==='mildiou') return pc.includes('mildiou');
+  if(cible==='oïdium') return pc.includes('dium');
+  if(cible==='botrytis') return pc.includes('botrytis');
+  if(cible==='tordeuses') return pc.includes('tordeuse');
+  if(cible==='flavescence dorée') return pc.includes('cicadelle')||pc.includes('flavescence');
+  if(cible==='nutrition'||cible==='correction carence'||cible==='anti-stress'||cible==='floraison-nouaison')
+   return po.includes(cible)||pc.includes(cible);
+  if(cible==='fertilisant foliaire') return pcat.includes('fertilisant');
+  if(cible==='biostimulant') return pcat.includes('biostimulant');
+  return true;
+ });
+}
+
+function xfUpdateFamilles(n){
+ const prods=xfGetFiltered(n);
+ const famSel=document.getElementById('xf_fm'+n);
+ if(!famSel) return;
+ famSel.innerHTML='<option value="">— Toutes —</option>';
+ const familles=[...new Set(prods.map(p=>p.famille||'Non classé'))].sort();
+ familles.forEach(f=>{famSel.innerHTML+=`<option>${f}</option>`;});
+ xfUpdateMolecules(n);
+}
+
+function xfUpdateMolecules(n){
+ const prods=xfGetFiltered(n);
+ const fam=document.getElementById('xf_fm'+n)?.value||'';
+ const filtered=fam?prods.filter(p=>(p.famille||'Non classé')===fam):prods;
+ const moSel=document.getElementById('xf_mo'+n);
+ if(!moSel) return;
+ moSel.innerHTML='<option value="">— Toutes —</option>';
+ const mols=[...new Set(filtered.map(p=>p.substance_active||'?'))].sort();
+ mols.forEach(m=>{moSel.innerHTML+=`<option>${m}</option>`;});
+ xfUpdatePartenaires(n);
+}
+
+function xfUpdatePartenaires(n){
+ const prods=xfGetFiltered(n);
+ const fam=document.getElementById('xf_fm'+n)?.value||'';
+ const mol=document.getElementById('xf_mo'+n)?.value||'';
+ let filtered=prods;
+ if(fam) filtered=filtered.filter(p=>(p.famille||'Non classé')===fam);
+ if(mol) filtered=filtered.filter(p=>(p.substance_active||'')==mol);
+ const paSel=document.getElementById('xf_pa2'+n);
+ if(!paSel) return;
+ paSel.innerHTML='<option value="">— Tous —</option>';
+ const parts=[...new Set(filtered.map(p=>p.partenaire||'').filter(Boolean))].sort();
+ parts.forEach(pa=>{paSel.innerHTML+=`<option>${pa}</option>`;});
+ xfUpdateSpecialites(n);
+}
+
+function xfUpdateSpecialites(n){
+ const prods=xfGetFiltered(n);
+ const fam=document.getElementById('xf_fm'+n)?.value||'';
+ const mol=document.getElementById('xf_mo'+n)?.value||'';
+ const part=document.getElementById('xf_pa2'+n)?.value||'';
+ let filtered=prods;
+ if(fam) filtered=filtered.filter(p=>(p.famille||'Non classé')===fam);
+ if(mol) filtered=filtered.filter(p=>(p.substance_active||'')==mol);
+ if(part) filtered=filtered.filter(p=>(p.partenaire||'')==part);
+ const prSel=document.getElementById('xf_pr'+n);
+ if(!prSel) return;
+ prSel.innerHTML='<option value="">— Choisir —</option>';
+ filtered.forEach(p=>{
+  const icon=p.categorie==='Phyto'?'🧪':p.categorie==='Fertilisant foliaire'?'🌿':'📦';
+  const opt=p.option_abc?` [${p.option_abc}]`:'';
+  prSel.innerHTML+=`<option value="${p.id}" data-sa="${p.substance_active||''}" data-ty="${p.type_cps||p.type_mfsc||''}" data-do="${p.dose_homologuee||''}" data-nom="${p.nom}" data-fam="${p.famille||''}">${icon} ${p.nom}${opt}</option>`;
+ });
+ // Si un seul résultat, sélectionner automatiquement
+ if(filtered.length===1){prSel.selectedIndex=1;xfFillRow(n);}
+}
+
+function xfFillRow(n){
+ const sel=document.getElementById('xf_pr'+n);
+ const opt=sel?.options[sel.selectedIndex];
+ document.getElementById('xf_sa'+n).value=opt?.dataset?.sa||'';
+ document.getElementById('xf_ty'+n).value=opt?.dataset?.ty||'';
+ document.getElementById('xf_dh'+n).value=opt?.dataset?.do||'';
+ document.getElementById('xf_fam'+n).value=opt?.dataset?.fam||'';
+}
+
+async function saveXMulti(){
+ const checkedClients=[...document.querySelectorAll('.xf_cl_chk:checked')].map(c=>c.value);
+ if(checkedClients.length===0){alert('Sélectionnez au moins un client');return;}
+ const passage=document.getElementById('xf_pa').value;
+ const vol=document.getElementById('xf_vo').value;
+ const obs=document.getElementById('xf_ob').value;
+ const datePrevue=document.getElementById('xf_dp_date').value||null;
+ // Collecter les produits
+ let prods=[];
+ for(let i=1;i<=5;i++){
+  const prSel=document.getElementById('xf_pr'+i);
+  if(!prSel) continue;
+  const opt=prSel.options[prSel.selectedIndex];
+  if(!opt || prSel.selectedIndex===0) continue;
+  const dp=document.getElementById('xf_dp'+i)?.value;
+  if(!dp){alert('Renseignez la dose prescrite pour le produit '+i);return;}
+  prods.push({
+   cible:document.getElementById('xf_ci'+i)?.value||'',
+   id_produit:prSel.value||'',
+   nom_produit:opt?.dataset?.nom||opt?.textContent?.replace(/^[🧪🌿🧬📦]\s*/,'').replace(/\s*\[.\]$/,'')||'',
+   substance_active:document.getElementById('xf_sa'+i)?.value||'',
+   type_cps:document.getElementById('xf_ty'+i)?.value||'',
+   dose_homologuee:document.getElementById('xf_dh'+i)?.value||'',
+   dose_prescrite:dp
+  });
+ }
+ if(prods.length===0){alert('Sélectionnez au moins un produit et renseignez sa dose');return;}
+ // Confirmation avant enregistrement
+ let recap=`${prods.length} produit(s) × ${checkedClients.length} client(s) = ${prods.length*checkedClients.length} prescription(s)\n\nPassage : ${passage}\n`;
+ prods.forEach(p=>{recap+=`• ${p.nom_produit} → ${p.dose_prescrite}\n`;});
+ recap+=`\nEnregistrer ?`;
+ if(!confirm(recap))return;
+ // Sauvegarder pour chaque client × chaque produit
+ let total=0;
+ for(const cid of checkedClients){
+  for(const p of prods){
+   await api('/api/prescriptions',{method:'POST',body:JSON.stringify({
+    id_client:cid, cible:p.cible, passage:passage,
+    id_produit:p.id_produit, nom_produit:p.nom_produit,
+    substance_active:p.substance_active, type_cps:p.type_cps,
+    dose_homologuee:p.dose_homologuee, dose_prescrite:p.dose_prescrite,
+    volume_bouillie:vol, observations:obs, date_prevue:datePrevue
+   })});
+   total++;
+  }
+ }
+ closeModal();loadPresc();
+ // Générer et stocker les bulletins PDF pour chaque client concerné
+ const clientIds=[...new Set(checkedClients)];
+ genererEtStockerBulletins(clientIds);
+ alert(`✅ ${prods.length} produit(s) × ${checkedClients.length} client(s) = ${total} prescription(s) enregistrée(s)\n📁 Bulletins PDF en cours de génération...`);
+}
+async function loadMaturiteAdmin(){
+ let sel='<option value="">— Tous les clients —</option>';
+ CLIENTS.forEach(c=>{sel+=`<option value="${c.id}">${c.exploitation}</option>`;});
+ document.getElementById('tc-maturite').innerHTML=`
+ <div class="card"><div class="ct">🍇 Suivi de maturité — Campagne 2026</div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+  <select id="ma_cl" style="width:auto" onchange="loadMaturiteAdmin()">${sel}</select>
+  <button class="btn bg btn-sm" onclick="showAddParcelleAdmin()">+ Parcelle</button>
+  <button class="btn bb btn-sm" onclick="showFicheMatuAdmin()">📋 Saisir fiche</button>
+  <a href="#" onclick="exportMaturiteCSV()" class="btn btn-sm" style="background:var(--gm);color:#fff">📥 CSV Itinéraire</a>
+ </div>
+ <div id="matuAdminContent"><span style="color:var(--bl)">⏳ Chargement...</span></div>
+ </div>`;
+ await refreshMaturiteAdmin();
+}
+
+async function refreshMaturiteAdmin(){
+ const cid=document.getElementById('ma_cl')?.value||'';
+ const url='/api/maturite'+(cid?'?client_id='+cid:'');
+ const [fiches,parcelles]=await Promise.all([aj(url),aj('/api/parcelles'+(cid?'?client_id='+cid:''))]);
+ const el=document.getElementById('matuAdminContent');
+ if(!fiches||!fiches.length){
+  el.innerHTML=`<p style="color:var(--gr)">Aucune fiche de maturité.${!cid?' Sélectionnez un client ou saisissez une première fiche.':''}</p>`;
+  if(parcelles&&parcelles.length){
+   let ph='<div style="margin-top:10px"><strong>Parcelles :</strong><br>';
+   parcelles.forEach(p=>ph+=`<span class="badge b-info" style="margin:2px">${p.nom} (${p.cepage||'?'})</span>`);
+   el.innerHTML+=ph+'</div>';
+  }
+  return;
+ }
+ // Tableau récap trié par score décroissant
+ let h='<table><tr><th>Client</th><th>Parcelle</th><th>Cépage</th><th>Date</th><th>Degré</th><th>AT</th><th>Score</th><th>Rendement</th><th>Recommandation</th></tr>';
+ const sorted=[...fiches].sort((a,b)=>(b.score_total||0)-(a.score_total||0));
+ sorted.forEach(f=>{
+  const rcolor=f.score_total>=80?'var(--gm)':f.score_total>=60?'var(--or)':f.score_total>=40?'#FFC107':'var(--rd)';
+  h+=`<tr>
+   <td style="font-size:10px">${f.exploitation||cid}</td>
+   <td><strong>${f.parcelle_nom||'?'}</strong></td>
+   <td style="font-size:10px">${f.cepage||'?'}</td>
+   <td style="font-size:10px">${f.date_fiche||''}</td>
+   <td><strong>${f.degre_probable||'—'}%</strong></td>
+   <td style="font-size:10px">${f.AT?f.AT+' g/L':'—'}</td>
+   <td><span style="background:${rcolor};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${f.score_total||0}/100</span></td>
+   <td style="font-size:10px">${f.rendement_kgha?f.rendement_kgha+' kg/ha':'—'}</td>
+   <td style="font-size:9px">${f.recommandation||'—'}</td>
+  </tr>`;
+ });
+ h+='</table>';
+ el.innerHTML=h;
+}
+
+function exportMaturiteCSV(){
+ const cid=document.getElementById('ma_cl')?.value||'';
+ window.open('/api/maturite/export-csv'+(cid?'?client_id='+cid:''));
+}
+
+function showAddParcelleAdmin(){
+ const cid=document.getElementById('ma_cl')?.value||'';
+ let clSel='';CLIENTS.forEach(c=>{clSel+=`<option value="${c.id}" ${c.id===cid?'selected':''}>${c.exploitation}</option>`;});
+ document.getElementById('MC').innerHTML=`<h3>+ Nouvelle parcelle</h3>
+ <div class="fg">
+  <div><label>Client *</label><select id="ap_cl">${clSel}</select></div>
+  <div><label>Nom / lieu-dit *</label><input id="ap_nom"></div>
+  <div><label>Cépage</label><select id="ap_cep"><option value="">—</option><option>Chardonnay</option><option>Pinot Noir</option><option>Meunier</option></select></div>
+  <div><label>Surface plantée (ha)</label><input type="number" id="ap_spl" step="0.01"></div>
+  <div><label>Surface cadastrale (ha)</label><input type="number" id="ap_sca" step="0.01"></div>
+  <div><label>Pieds/ha</label><input type="number" id="ap_nph" placeholder="8000"></div>
+  <div><label>Commune</label><input id="ap_com"></div>
+  <div><label>Notes</label><input id="ap_notes"></div>
+ </div>
+ <button class="btn bg" onclick="saveParcelleAdmin()">Enregistrer</button>`;
+ document.getElementById('modal').classList.add('show');
+}
+
+async function saveParcelleAdmin(){
+ const nom=document.getElementById('ap_nom').value.trim();
+ const cid=document.getElementById('ap_cl').value;
+ if(!nom||!cid){alert('Client et nom obligatoires');return;}
+ await api('/api/parcelles',{method:'POST',body:JSON.stringify({
+  id_client:cid,nom,cepage:document.getElementById('ap_cep').value,
+  surface_plantee:parseFloat(document.getElementById('ap_spl').value)||null,
+  surface_cadastrale:parseFloat(document.getElementById('ap_sca').value)||null,
+  nb_pieds_ha:parseInt(document.getElementById('ap_nph').value)||null,
+  commune:document.getElementById('ap_com').value,
+  notes:document.getElementById('ap_notes').value
+ })});
+ closeModal();refreshMaturiteAdmin();
+}
+
+function showFicheMatuAdmin(){
+ const cid=document.getElementById('ma_cl')?.value||'';
+ let clSel='';CLIENTS.forEach(c=>{clSel+=`<option value="${c.id}" ${c.id===cid?'selected':''}>${c.exploitation}</option>`;});
+ const today=new Date().toISOString().slice(0,10);
+ document.getElementById('MC').innerHTML=`<h3>📋 Saisir une fiche de maturité</h3>
+ <div class="fg">
+  <div><label>Client *</label><select id="mfa_cl" onchange="loadParcellesSelect(this.value)">${clSel}</select></div>
+  <div><label>Parcelle *</label><select id="mfa_parc"><option value="">— Charger d'abord le client —</option></select></div>
+  <div><label>Date</label><input type="date" id="mfa_date" value="${today}"></div>
+  <div><label>Degré probable (%) *</label><input type="number" id="mfa_dp" step="0.1"></div>
+  <div><label>AT (g/L)</label><input type="number" id="mfa_at" step="0.1"></div>
+  <div><label>Pépins</label><select id="mfa_cp"><option value="">—</option><option value="1">Verts</option><option value="2">Brun clair</option><option value="3">Brun</option><option value="4">Brun foncé</option></select></div>
+  <div><label>Pulpe</label><select id="mfa_sp"><option value="">—</option><option value="1">Herbacée</option><option value="2">Acidulée</option><option value="3">Fruitée</option><option value="4">Sucrée équilibrée</option></select></div>
+  <div><label>Tanins</label><select id="mfa_ta"><option value="">—</option><option value="1">Verts astringents</option><option value="2">Présents fermes</option><option value="3">Soyeux mûrs</option></select></div>
+  <div><label>Poids grappe (g)</label><input type="number" id="mfa_pg"></div>
+  <div><label>Grappes/pied</label><input type="number" id="mfa_gp" step="0.1"></div>
+  <div style="grid-column:span 2"><label>Observations</label><textarea id="mfa_obs"></textarea></div>
+ </div>
+ <button class="btn bg" onclick="saveFicheMatuAdmin()">Enregistrer</button>`;
+ document.getElementById('modal').classList.add('show');
+ if(cid)loadParcellesSelect(cid);
+}
+
+async function loadParcellesSelect(cid){
+ const p=await aj('/api/parcelles?client_id='+cid);
+ const sel=document.getElementById('mfa_parc');
+ sel.innerHTML='<option value="">— Choisir —</option>';
+ (p||[]).forEach(x=>sel.innerHTML+=`<option value="${x.id}">${x.nom} (${x.cepage||'?'})</option>`);
+}
+
+async function saveFicheMatuAdmin(){
+ const cid=document.getElementById('mfa_cl').value;
+ const pid=document.getElementById('mfa_parc').value;
+ const dp=document.getElementById('mfa_dp').value;
+ if(!cid||!pid||!dp){alert('Client, parcelle et degré obligatoires');return;}
+ const d=await api('/api/maturite',{method:'POST',body:JSON.stringify({
+  id_client:cid,id_parcelle:parseInt(pid),
+  date_fiche:document.getElementById('mfa_date').value,
+  degre_probable:parseFloat(dp),
+  AT:document.getElementById('mfa_at').value||null,
+  couleur_pepins:parseInt(document.getElementById('mfa_cp').value)||null,
+  saveur_pulpe:parseInt(document.getElementById('mfa_sp').value)||null,
+  tanins:parseInt(document.getElementById('mfa_ta').value)||null,
+  poids_grappe:parseFloat(document.getElementById('mfa_pg').value)||null,
+  grappes_pied:parseFloat(document.getElementById('mfa_gp').value)||null,
+  observations:document.getElementById('mfa_obs').value,
+  saisie_par:'conseiller'
+ })});
+ const dd=await d.json();
+ closeModal();
+ alert(`✅ Fiche enregistrée\nScore : ${dd.score}/100 — ${dd.recommandation}${dd.rendement_kgha?'\nRendement estimé : '+dd.rendement_kgha+' kg/ha':''}`);
+ refreshMaturiteAdmin();
+}
+
+async function genererEtStockerBulletins(clientIds){
+ // Génère et stocke les bulletins PDF dans le portail pour les clients concernés
+ try{
+  const r=await fetch('/api/stocker-bulletins',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({clients:clientIds||[]})
+  });
+  const d=await r.json();
+  if(d.results){
+   const ok=d.results.filter(r=>r.status==='ok').length;
+   const err=d.results.filter(r=>r.status==='error').length;
+   console.log(`📁 Bulletins stockés : ${ok} OK${err?' · '+err+' erreur(s)':''}`);
+  }
+ }catch(e){console.error('Erreur génération bulletins:',e);}
+}
+
+function editPresc(p){
+ let clSel='';CLIENTS.forEach(c=>{clSel+=`<option value="${c.id}" ${p.id_client===c.id?'selected':''}>${c.exploitation} (${c.certification||'Conv.'})</option>`;});
+ document.getElementById('MC').innerHTML=`<h3>Modifier prescription #${p.id}</h3>
+<div class="fg">
+ <div><label>Client</label><select id="xp_cl">${clSel}</select></div>
+ <div><label>Cible</label><select id="xp_ci">${['Mildiou','Oïdium','Botrytis','Tordeuses','Flavescence dorée','Nutrition','Correction carence','Anti-stress','Floraison-nouaison','Qualité moûts','Fertilisant foliaire','Biostimulant'].map(o=>`<option ${p.cible===o?'selected':''}>${o}</option>`).join('')}</select></div>
+ <div><label>Passage</label><input id="xp_pa" list="xp_pa_list" value="${p.passage||''}"><datalist id="xp_pa_list"><option>T1</option><option>T2</option><option>T3</option><option>T4</option><option>T5</option><option>T6</option><option>T7</option><option>T8</option><option>T9</option><option>T10</option><option>T11</option><option>T12</option><option>Rattrapage</option><option>Compl.</option><option>Flo. (A)</option><option>Flo. (B)</option><option>Fermeture</option><option>Véraison</option><option>Post-vendange</option></datalist></div>
+ <div><label>Produit</label><input id="xp_no" value="${p.nom_produit||''}"></div>
+ <div><label>Substance active</label><input id="xp_sa" value="${p.substance_active||''}"></div>
+ <div><label>Type</label><input id="xp_ty" value="${p.type_cps||''}"></div>
+ <div><label>Dose homologuée</label><input id="xp_dh" value="${p.dose_homologuee||''}"></div>
+ <div><label>DOSE PRESCRITE</label><input id="xp_dp" value="${p.dose_prescrite||''}" style="border-color:var(--rd);font-weight:700"></div>
+ <div><label>Vol. bouillie (L/ha)</label><input id="xp_vo" value="${p.volume_bouillie||''}"></div>
+ <div><label>Appliqué ?</label><select id="xp_ap"><option ${p.applique==='Non'||!p.applique?'selected':''}>Non</option><option ${p.applique==='Oui'?'selected':''}>Oui</option><option ${p.applique==='Annulé'?'selected':''}>Annulé</option></select></div>
+ <div><label>Date réelle</label><input id="xp_dr" value="${p.date_reelle||''}" placeholder="JJ/MM/AAAA"></div>
+ <div><label>Dose réelle</label><input id="xp_dor" value="${p.dose_reelle||''}"></div>
+ <div style="grid-column:span 2"><label>Date préconisée</label><input type="date" id="xp_dp_date" value="${p.date_prevue||''}"></div>
+ <div style="grid-column:span 2"><label>Observations</label><textarea id="xp_ob">${p.observations||''}</textarea></div>
+</div>
+<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+ <button class="btn bg" onclick="savePrescEdit(${p.id})">Enregistrer</button>
+ <button class="btn bb" onclick="dupPresc(${p.id})">📋 Dupliquer vers d'autres clients</button>
+ <button class="btn btn-sm" style="background:#f3f4f6" onclick="closeModal()">Annuler</button>
+</div>`;
+document.getElementById('modal').classList.add('show');
+}
+
+function dupPresc(srcId){
+ // Récupérer les valeurs actuelles du formulaire
+ const data={
+  cible:document.getElementById('xp_ci').value,passage:document.getElementById('xp_pa').value,
+  nom_produit:document.getElementById('xp_no').value,substance_active:document.getElementById('xp_sa').value,
+  type_cps:document.getElementById('xp_ty').value,dose_homologuee:document.getElementById('xp_dh').value,
+  dose_prescrite:document.getElementById('xp_dp').value,volume_bouillie:document.getElementById('xp_vo').value,
+  observations:document.getElementById('xp_ob').value
+ };
+ const srcClient=document.getElementById('xp_cl').value;
+ let chk='';CLIENTS.forEach(c=>{
+  if(c.id===srcClient) return; // Exclure le client source
+  chk+=`<label style="display:flex;align-items:center;gap:4px;padding:3px 0;font-size:11px;cursor:pointer"><input type="checkbox" class="dup_cl_chk" value="${c.id}"> ${c.exploitation} <span class="badge ${c.certification==='Bio'?'b-bio':c.certification==='HVE'?'b-hve':'b-conv'}">${c.certification||'Conv.'}</span></label>`;
+ });
+ document.getElementById('MC').innerHTML=`<h3>Dupliquer la prescription</h3>
+<div class="al al-b"><strong>${data.nom_produit}</strong> — ${data.passage} — Dose: ${data.dose_prescrite}</div>
+<p style="font-size:11px;color:var(--gr);margin-bottom:8px">Cochez les clients vers lesquels dupliquer cette prescription :</p>
+<div style="max-height:200px;overflow-y:auto;border:1px solid #d1d5db;border-radius:5px;padding:8px">
+ <label style="display:flex;align-items:center;gap:4px;padding:3px 0;font-size:11px;cursor:pointer;font-weight:700;border-bottom:1px solid #e5e7eb;margin-bottom:4px"><input type="checkbox" onchange="document.querySelectorAll('.dup_cl_chk').forEach(c=>c.checked=this.checked)"> Tous les clients</label>
+ ${chk}
+</div>
+<div style="margin-top:12px"><button class="btn bb" onclick="execDup()">📋 Dupliquer</button> <button class="btn btn-sm" style="background:#f3f4f6" onclick="editPresc(${JSON.stringify(data).replace(/"/g,'&quot;')})">Retour</button></div>`;
+ // Stocker les données pour execDup
+ window._dupData=data;
+}
+
+async function execDup(){
+ const checked=[...document.querySelectorAll('.dup_cl_chk:checked')].map(c=>c.value);
+ if(checked.length===0){alert('Sélectionnez au moins un client');return;}
+ const d=window._dupData;
+ for(const cid of checked){
+  await api('/api/prescriptions',{method:'POST',body:JSON.stringify({
+   id_client:cid,cible:d.cible,passage:d.passage,nom_produit:d.nom_produit,
+   substance_active:d.substance_active,type_cps:d.type_cps,dose_homologuee:d.dose_homologuee,
+   dose_prescrite:d.dose_prescrite,volume_bouillie:d.volume_bouillie,observations:d.observations
+  })});
+ }
+ closeModal();loadPresc();
+ alert(`✅ Prescription dupliquée vers ${checked.length} client(s)`);
+}
+async function savePrescEdit(pid){
+ await api(`/api/prescriptions/${pid}`,{method:'PUT',body:JSON.stringify({
+  id_client:document.getElementById('xp_cl').value,
+  cible:document.getElementById('xp_ci').value,
+  passage:document.getElementById('xp_pa').value,
+  nom_produit:document.getElementById('xp_no').value,
+  substance_active:document.getElementById('xp_sa').value,
+  type_cps:document.getElementById('xp_ty').value,
+  dose_homologuee:document.getElementById('xp_dh').value,
+  dose_prescrite:document.getElementById('xp_dp').value,
+  volume_bouillie:document.getElementById('xp_vo').value,
+  applique:document.getElementById('xp_ap').value,
+  date_reelle:document.getElementById('xp_dr').value,
+  dose_reelle:document.getElementById('xp_dor').value,
+  observations:document.getElementById('xp_ob').value,
+  date_prevue:document.getElementById('xp_dp_date')?.value||null
+ })});
+ closeModal();loadPresc();
+}
+async function delX(id){if(confirm('Supprimer ?')){await api(`/api/prescriptions/${id}`,{method:'DELETE'});loadPresc();}}
+
+// ===== BULLETIN HEBDO =====
+async function loadBH(){
+ const bh=await aj('/api/bulletin-hebdo');
+ document.getElementById('tc-bulletin').innerHTML=`<div class="card">
+  <div class="ct"><span>📝 Bulletin Hebdo</span><button class="btn bg btn-sm" onclick="saveBH()">💾 Sauvegarder</button></div>
+  <div style="border:2px dashed var(--gm);background:var(--gbg);border-radius:var(--r);padding:16px;text-align:center;margin-bottom:14px">
+   <p style="font-weight:600;color:var(--gd);margin-bottom:6px">📄 Importer un PDF</p>
+   <p style="font-size:10px;color:var(--gr);margin-bottom:10px">Le texte sera extrait et les champs pré-remplis</p>
+   <label class="btn bg" style="cursor:pointer"><input type="file" accept=".pdf" style="display:none" onchange="uploadPDF(this)">📂 Choisir un PDF</label>
+   <div id="pdfSt" style="margin-top:6px;font-size:10px"></div>
+  </div>
+  <h4 style="color:var(--gd);margin:12px 0 6px">1. Phénologie</h4>
+  <div><label style="font-size:10px;color:var(--gr)">Texte libre (repris dans tous les bulletins)</label>
+   <textarea id="bh_tp" style="min-height:80px">${bh.texte_phenologie||''}</textarea></div>
+  <div class="fg fg3" style="margin-top:8px">
+   <div><label>Stade Chardonnay</label><input id="bh_sc" value="${bh.stade_chard||''}"></div>
+   <div><label>Stade Pinot Noir</label><input id="bh_sp" value="${bh.stade_pn||''}"></div>
+   <div><label>Stade Meunier</label><input id="bh_sm" value="${bh.stade_meunier||''}"></div>
+  </div>
+  <h4 style="color:var(--or);margin:14px 0 6px">2. Mildiou</h4>
+  <div class="fg"><div><label>EPI / Potentiel infectieux</label><input id="bh_ep" value="${bh.epi||''}"></div><div></div>
+   <div><label>Analyse mildiou</label><textarea id="bh_rm">${bh.risque_mildiou||''}</textarea></div><div><label>Recommandation</label><textarea id="bh_xm">${bh.reco_mildiou||''}</textarea></div></div>
+  <h4 style="color:var(--gm);margin:14px 0 6px">3. Oïdium</h4>
+  <div class="fg"><div><label>Analyse oïdium</label><textarea id="bh_ro">${bh.risque_oidium||''}</textarea></div><div><label>Recommandation</label><textarea id="bh_xo">${bh.reco_oidium||''}</textarea></div></div>
+  <h4 style="color:var(--gr);margin:14px 0 6px">Autres</h4>
+  <div class="fg"><div><label>Gel / Ravageurs</label><textarea id="bh_ge">${bh.gel||''}</textarea></div><div><label>Avance phéno</label><input id="bh_av" value="${bh.avance||''}"></div></div>
+  <h4 style="color:var(--rd);margin:14px 0 6px">📋 Pas de traitement prescrit cette semaine ?</h4>
+  <div style="margin-bottom:8px">
+   <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+    <input type="checkbox" id="bh_aucun" ${(bh.passage_en_cours||'')==='AUCUN'?'checked':''} onchange="document.getElementById('bh_no_presc_zone').style.display=this.checked?'block':'none'" style="width:18px;height:18px">
+    Cocher si aucun traitement à prescrire cette semaine
+   </label>
+   <p style="font-size:10px;color:var(--gr);margin-top:4px">Le passage est détecté automatiquement pour chaque client (dernier passage connu + 1).</p>
+  </div>
+  <div id="bh_no_presc_zone" style="display:${(bh.passage_en_cours||'')==='AUCUN'?'block':'none'};margin-top:8px">
+   <div class="fg"><div style="grid-column:span 2"><label>Motif / Explication (sera affiché dans le bulletin à la place du programme phyto)</label>
+    <textarea id="bh_no_presc_motif" style="min-height:80px" placeholder="Ex: Pas de traitement cette semaine. Les conditions climatiques sèches ne justifient pas d'intervention.">${bh.no_presc_motif||''}</textarea></div></div>
+  </div>
+  <h4 style="color:var(--bl);margin:14px 0 6px">Section complémentaire (optionnelle)</h4>
+  <div class="fg"><div><label>Titre</label><input id="bh_tc" value="${bh.titre_complement||''}"></div><div><label>Contenu</label><textarea id="bh_cc">${bh.contenu_complement||''}</textarea></div></div>
+  <h4 style="color:var(--gm);margin:14px 0 6px">📎 Documents complémentaires (PDF)</h4>
+  <p style="font-size:10px;color:var(--gr);margin-bottom:8px">Ces PDF seront ajoutés à la fin de chaque bulletin généré. Idéal pour : notes techniques, réglementation, fiches produits, cartographie, etc.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+   <label class="btn bg btn-sm" style="cursor:pointer"><input type="file" accept=".pdf" multiple style="display:none" onchange="uploadComplPdfs(this)">📂 Ajouter des PDF</label>
+   <button class="btn btn-sm btn-del" onclick="clearComplPdfs()">🗑 Tout supprimer</button>
+  </div>
+  <div id="complPdfList" style="font-size:11px"></div>
+ </div>`;
+}
+async function saveBH(){await api('/api/bulletin-hebdo',{method:'POST',body:JSON.stringify({texte_phenologie:document.getElementById('bh_tp').value,stade_chard:document.getElementById('bh_sc').value,stade_pn:document.getElementById('bh_sp').value,stade_meunier:document.getElementById('bh_sm').value,epi:document.getElementById('bh_ep').value,risque_mildiou:document.getElementById('bh_rm').value,reco_mildiou:document.getElementById('bh_xm').value,risque_oidium:document.getElementById('bh_ro').value,reco_oidium:document.getElementById('bh_xo').value,gel:document.getElementById('bh_ge').value,avance:document.getElementById('bh_av').value,passage_en_cours:document.getElementById('bh_aucun')?.checked?'AUCUN':'',no_presc_motif:document.getElementById('bh_no_presc_motif')?.value||'',titre_complement:document.getElementById('bh_tc').value,contenu_complement:document.getElementById('bh_cc').value})});alert('✅ Sauvegardé');}
+async function uploadPDF(input){const f=input.files[0];if(!f)return;document.getElementById('pdfSt').innerHTML='<span style="color:var(--bl)">⏳ Extraction...</span>';
+const fd=new FormData();fd.append('file',f);try{const r=await fetch('/api/upload-pdf',{method:'POST',body:fd});const d=await r.json();
+if(d.error){document.getElementById('pdfSt').innerHTML=`<span style="color:var(--rd)">❌ ${d.error}</span>`;return;}
+document.getElementById('pdfSt').innerHTML='<span style="color:var(--gd)">✅ Extrait — champs pré-remplis</span>';
+const m={bh_ep:'epi',bh_rm:'risque_mildiou',bh_ro:'risque_oidium',bh_ge:'gel',bh_tp:'texte_phenologie',bh_sc:'stade_chard',bh_sp:'stade_pn',bh_sm:'stade_meunier'};
+for(const[el,k] of Object.entries(m)){const e=document.getElementById(el);if(e&&d[k]&&!e.value.trim())e.value=d[k];}
+}catch(e){document.getElementById('pdfSt').innerHTML=`<span style="color:var(--rd)">❌ ${e.message}</span>`;}}
+
+async function uploadComplPdfs(input){
+ const files=input.files;if(!files.length)return;
+ for(const f of files){
+  const fd=new FormData();fd.append('file',f);
+  try{
+   const r=await fetch('/api/upload-compl-pdf',{method:'POST',body:fd});
+   const d=await r.json();
+   if(d.error){alert('❌ '+f.name+' : '+d.error);continue;}
+  }catch(e){alert('❌ '+f.name+' : '+e.message);}
+ }
+ loadComplPdfs();
+ input.value='';
+}
+async function loadComplPdfs(){
+ try{
+  const r=await fetch('/api/compl-pdfs');const d=await r.json();
+  const el=document.getElementById('complPdfList');
+  if(!d.length){el.innerHTML='<span style="color:var(--gr)">Aucun document complémentaire</span>';return;}
+  el.innerHTML=d.map(f=>`<div class="al al-b" style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;margin-bottom:4px">
+   <span>📄 <strong>${f.name}</strong> <span style="color:var(--gr);font-size:9px">(${(f.size/1024).toFixed(0)} Ko)</span></span>
+   <button class="btn btn-sm btn-del" onclick="delComplPdf('${f.name}')">✕</button>
+  </div>`).join('');
+ }catch(e){}
+}
+async function delComplPdf(name){
+ await fetch('/api/compl-pdfs/'+encodeURIComponent(name),{method:'DELETE'});
+ loadComplPdfs();
+}
+async function clearComplPdfs(){
+ if(!confirm('Supprimer tous les documents complémentaires ?'))return;
+ await fetch('/api/compl-pdfs',{method:'DELETE'});
+ loadComplPdfs();
+}
+
+// ===== METEO =====
+async function fetchMeteo(clientId){
+ try{
+ // Déterminer les coordonnées
+ let url='/api/meteo';
+ let locLabel='Reims (défaut)';
+ if(clientId){
+  const c=CLIENTS.find(x=>x.id===clientId);
+  if(c){
+   if(c.latitude&&c.longitude){url=`/api/meteo?lat=${c.latitude}&lon=${c.longitude}`;locLabel=`${c.exploitation} — ${c.commune||''} (${c.latitude}, ${c.longitude})`;}
+   else if(c.commune){url=`/api/meteo?commune=${encodeURIComponent(c.commune)}`;locLabel=`${c.exploitation} — ${c.commune} (géocodage auto)`;}
+   else{locLabel=`${c.exploitation} (pas de coordonnées → défaut Reims)`;}
+  }
+ }
+ const days=await aj(url);if(days.error){alert('Erreur: '+days.error);return;}METEO=days;
+const jf=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];let h='';
+days.forEach(dd=>{const dt=new Date(dd.date);const rc=dd.risk==='Nul'||dd.risk==='Faible'?'ri-n':dd.risk==='Modéré'?'ri-m':'ri-h';
+h+=`<div class="md"><div style="font-weight:700;font-size:10px">${jf[dt.getDay()]}</div><div style="font-size:9px;color:var(--gr)">${dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})}</div>
+<div style="font-size:20px;font-weight:700">${Math.round(dd.tmax)}°</div><div style="font-size:10px;color:var(--bl)">${Math.round(dd.tmin)}°</div>
+<div style="font-size:9px">${dd.pluie>0?'💧'+dd.pluie.toFixed(1)+'mm':'☀️ Sec'}</div>
+<div style="font-size:8px;color:var(--gr)">${dd.soil_moisture_txt||''} · 🍃${dd.leaf_wetness!=null?dd.leaf_wetness+'%':'—'}</div>
+<div style="font-size:8px;${dd.fenetre_traitement==='Oui'?'color:var(--gd);font-weight:700':'color:var(--gr)'}">${dd.fenetre_traitement==='Oui'?'✅Trt':'❌Trt'}</div>
+<div class="ri ${rc}">🍄${dd.risk}</div></div>`;});
+let selMet='<option value="">📍 Tous (Reims défaut)</option>';CLIENTS.forEach(c=>{const hasGps=c.latitude&&c.longitude;const sel2=clientId===c.id?'selected':'';
+ selMet+=`<option value="${c.id}" ${sel2}>${c.exploitation} — ${c.commune||'?'} ${hasGps?'📍':''}</option>`;});
+document.getElementById('tc-meteo').innerHTML=`<div class="card"><div class="ct"><span>🌤️ Météo 7 jours</span><div style="display:flex;gap:6px;align-items:center"><select id="meteo_cl" onchange="fetchMeteo(this.value)" style="width:auto;font-size:11px">${selMet}</select><button class="btn bb btn-sm" onclick="fetchMeteo(document.getElementById('meteo_cl')?.value)">🔄</button></div></div>
+<p style="font-size:9px;color:var(--gr);margin-bottom:8px">📍 ${locLabel}</p>
+<div class="g7">${h}</div><div style="margin-top:14px"><table><tr><th class="bl">Date</th><th class="bl">T°min</th><th class="bl">T°max</th><th class="bl">Pluie</th><th class="bl">HR</th><th class="bl">🍃Humect.</th><th class="bl">Sol</th><th class="bl">Vent</th><th class="bl">Trt?</th><th class="bl">🍄Mildiou</th><th class="bl">🫧Oïdium</th></tr>
+${days.map(dd=>`<tr><td>${dd.date}</td><td>${dd.tmin}°</td><td>${dd.tmax}°</td><td>${dd.pluie}mm</td><td>${dd.hr!=null?Math.round(dd.hr)+'%':'—'}</td>
+<td><span class="ri ${dd.leaf_wetness>=70?'ri-h':dd.leaf_wetness>=40?'ri-m':'ri-n'}">${dd.leaf_wetness!=null?dd.leaf_wetness+'%':'—'}</span></td>
+<td>${dd.soil_moisture_txt||'—'}</td><td>${dd.wind!=null?Math.round(dd.wind)+'km/h':'—'}</td>
+<td>${dd.fenetre_traitement==='Oui'?'<span style="color:var(--gd);font-weight:700">✅</span>':'<span style="color:var(--rd)">❌</span>'}</td>
+<td><span class="ri ${dd.risk==='Nul'||dd.risk==='Faible'?'ri-n':dd.risk==='Modéré'?'ri-m':'ri-h'}">${dd.risk}</span></td>
+<td><span class="ri ${dd.risk_oidium==='Nul'||dd.risk_oidium==='Faible'?'ri-n':dd.risk_oidium==='Modéré'?'ri-m':'ri-h'}">${dd.risk_oidium||'—'}</span></td></tr>`).join('')}
+</table></div></div>`;
+// Quick panels
+document.getElementById('meteoQ').innerHTML=h.split('</div></div>').slice(0,3).join('</div></div>')+'</div></div>';
+const risky=days.filter(dd=>dd.risk!=='Nul'&&dd.risk!=='Faible');const fen=days.filter(dd=>dd.fenetre_traitement==='Oui');
+let rq='';if(risky.length)rq+=`<div class="al al-o">🍄 <strong>${risky.length}j risque mildiou</strong></div>`;else rq+=`<div class="al al-g">🍄 Pas de risque</div>`;
+if(fen.length)rq+=`<div class="al al-b">🎯 <strong>${fen.length} fenêtre(s) trt</strong></div>`;else rq+=`<div class="al al-r">⚠️ Pas de fenêtre trt</div>`;
+document.getElementById('riskQ').innerHTML=rq;
+}catch(e){document.getElementById('meteoQ').innerHTML=`<div class="al al-r">❌ ${e.message}</div>`;}}
+
+// ===== PREVIEW =====
+function loadPrevSel(){let sel='<option value="">— Choisir —</option>';CLIENTS.forEach(c=>{sel+=`<option value="${c.id}">${c.exploitation} (${c.commune||''})</option>`;});
+document.getElementById('tc-preview').innerHTML=`<div class="card"><div class="ct"><span>👁️ Prévisualisation</span><div><select id="pv_cl" onchange="loadPrev()" style="width:auto">${sel}</select> <button class="btn bg btn-sm" onclick="genWord()">📄 Word</button> <button class="btn br btn-sm" onclick="genPdf()">📕 PDF</button></div></div><div class="preview" id="pvC"><p style="color:var(--gr)">Sélectionnez un client</p></div></div>`;}
+async function loadPrev(){const cid=document.getElementById('pv_cl').value;if(!cid)return;
+const d=await aj(`/api/preview/${cid}`);const c=d.client;const av=d.av||{};const pr=d.prescriptions||[];
+let h=`<div class="banner"><h1 style="font-size:14px;margin-bottom:3px">FICHE DE CONSEIL TECHNIQUE INDIVIDUELLE</h1><p style="font-size:11px;color:var(--gl)">${c.exploitation} — ${c.commune||''} — ${new Date().toLocaleDateString('fr-FR')}</p><p style="font-size:10px;color:var(--gl)">${c.interlocuteur||''} | ${c.certification||''}</p></div>`;
+h+=`<h2>1. Phénologie</h2>${av.texte_phenologie?`<p>${av.texte_phenologie}</p>`:'<p style="color:var(--gr)">Non renseigné</p>'}`;
+h+=`<h2>2. Mildiou</h2><p><strong>EPI :</strong> ${av.epi||'?'}</p><p style="color:var(--or)"><strong>Risque :</strong> ${av.risque_mildiou||'?'}</p>`;
+if(av.reco_mildiou)h+=`<p><em style="color:var(--gr)">Recommandation : ${av.reco_mildiou}</em></p>`;
+h+=`<h2>3. Oïdium</h2><p>${av.risque_oidium||'?'}</p>`;
+h+=`<h2>4. Météo</h2>`;if(METEO){h+='<div class="g7">';METEO.forEach(dd=>{h+=`<div class="md" style="padding:6px"><div style="font-size:9px">${dd.date.slice(5)}</div><div style="font-weight:700">${Math.round(dd.tmax)}°</div><div style="font-size:9px;color:var(--bl)">${dd.pluie}mm</div><div class="ri ${dd.risk==='Nul'||dd.risk==='Faible'?'ri-n':'ri-m'}" style="font-size:8px">${dd.risk}</div></div>`;});h+='</div>';}
+h+=`<h2>5. Programme phyto</h2><p style="font-size:10px;color:var(--gr)">Certification : ${c.certification} — Folpel : ${d.cumul_folpel} kg/ha</p>`;
+if(pr.length){h+='<table><tr><th class="or">Passage</th><th class="or">Produit</th><th class="or">Dose homol.</th><th class="or">DOSE PRESCRITE</th><th class="or">Obs.</th></tr>';
+pr.forEach(p=>{const cu=p.dose_prescrite&&p.dose_prescrite!==p.dose_homologuee;h+=`<tr><td><strong>${p.passage||''}</strong></td><td>${p.nom_produit||''}</td><td style="color:var(--gr)">${p.dose_homologuee||''}</td><td style="font-weight:700;${cu?'color:var(--rd)':''}">${p.dose_prescrite||'[?]'}</td><td style="font-size:9px;color:var(--gr)">${p.observations||''}</td></tr>`;});h+='</table>';}
+else h+='<p style="color:var(--or)">⚠️ Aucune prescription</p>';
+if(av.titre_complement&&av.contenu_complement)h+=`<h2>6. ${av.titre_complement}</h2><p>${av.contenu_complement}</p>`;
+h+=`<p style="margin-top:14px;font-size:8px;color:var(--gr);font-style:italic">Ce document est établi par VITI Sens à titre de conseil technique individuel. La décision de traiter reste sous l'entière responsabilité du viticulteur.</p>`;
+document.getElementById('pvC').innerHTML=h;}
+
+// ===== GENERATE =====
+function loadGenSel(){let sel='<option value="all">— Tous —</option>';CLIENTS.forEach(c=>{sel+=`<option value="${c.id}">${c.exploitation}</option>`;});
+document.getElementById('tc-generate').innerHTML=`<div class="card"><div class="ct">📄 Génération</div><p style="color:var(--gr);font-size:11px;margin-bottom:10px">Générez les bulletins et envoyez-les par email</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="gn_cl" style="width:auto">${sel}</select><button class="btn br" onclick="genPdf()">📕 PDF ce client</button><button class="btn bg" onclick="genWord()">📄 Word ce client</button><button class="btn" style="background:var(--bl);color:#fff" onclick="prepEmail()">✉️ Email ce client</button><button class="btn bo" onclick="genTous()">📦 Tous en PDF (ZIP)</button><button class="btn" style="background:var(--gm);color:#fff" onclick="prepAllEmails()">✉️ Tous les emails</button></div><div id="gnLog" style="margin-top:10px"></div></div>
+<div class="card" style="margin-top:12px"><div class="ct">📊 Traçabilité — Bilan de campagne</div>
+<p style="font-size:10px;color:var(--gr);margin-bottom:8px">Tableau récapitulatif de tous les traitements prescrits pendant la campagne, avec cumuls Cu et Folpel.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+ <select id="tr_cl" style="width:auto">${sel}</select>
+ <button class="btn br" onclick="genTraca()">📊 PDF traçabilité</button>
+ <button class="btn bg" onclick="genTracaWord()">📄 Word traçabilité</button>
+</div>
+</div>
+
+<div class="card" style="margin-top:12px"><div class="ct">📁 Bulletins portail — Archivage</div>
+<p style="font-size:10px;color:var(--gr);margin-bottom:8px">Les bulletins sont générés automatiquement à chaque prescription. Ce bouton permet de les regénérer manuellement si besoin.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+ <select id="sb_cl" style="width:auto"><option value="">— Tous les clients —</option>${sel}</select>
+ <button class="btn bb btn-sm" onclick="genererEtStockerBulletins(document.getElementById('sb_cl').value?[document.getElementById('sb_cl').value]:[])">📁 Générer et stocker les bulletins</button>
+</div>
+<div id="sbLog" style="margin-top:8px;font-size:11px"></div>
+</div>
+<p style="font-size:10px;color:var(--gr);margin-bottom:8px">Mettez des PDF à disposition sur le portail client. <strong>Commun</strong> = visible par tous les clients. <strong>Par client</strong> = visible uniquement par lui.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+ <label class="btn bb btn-sm" style="cursor:pointer">📂 PDF commun (tous les clients)<input type="file" accept=".pdf" style="display:none" onchange="uploadDoc(this,'')"></label>
+ <select id="doc_cl" style="width:auto">${sel}</select>
+ <label class="btn bg btn-sm" style="cursor:pointer">📂 PDF pour ce client<input type="file" accept=".pdf" style="display:none" onchange="uploadDoc(this,document.getElementById('doc_cl').value)"></label>
+</div>
+<div id="docAdminList" style="font-size:11px">
+ <button class="btn bb btn-sm" onclick="loadDocAdmin()">🔄 Actualiser la liste</button>
+</div>
+</div>
+<p style="font-size:10px;color:var(--gr);margin-bottom:8px">Chaque client reçoit un lien unique pour consulter son bulletin, la météo et valider ses traitements.</p>
+<button class="btn bb btn-sm" onclick="genTokens()">🔑 Générer les liens d'accès</button>
+<div id="portailLinks" style="margin-top:10px"></div>
+</div>
+<div class="card" style="margin-top:12px"><div class="ct">⚙️ Configuration email (OVH)</div>
+<div class="fg" style="margin-bottom:8px">
+ <div><label>Serveur IMAP</label><input id="em_srv" value="ssl0.ovh.net"></div>
+ <div><label>Port</label><input id="em_port" value="993"></div>
+ <div><label>Adresse email</label><input id="em_from" value="florent.miguel@sasu-viti-sens.fr"></div>
+ <div><label>Mot de passe</label><input type="password" id="em_pwd" placeholder="Votre mot de passe OVH"></div>
+</div>
+<button class="btn bb btn-sm" onclick="testEmailConfig()">🔌 Tester la connexion</button>
+<span id="emLog" style="margin-left:10px;font-size:11px"></span>
+<p style="font-size:9px;color:var(--gr);margin-top:6px">Le mot de passe n'est pas stocké. Il est conservé en mémoire le temps de la session serveur uniquement.</p>
+</div>
+
+<div class="card" style="margin-top:12px"><div class="ct">📱 SMS — Notifications & Alertes</div>
+<div class="fg" style="margin-bottom:10px">
+ <div><label>Application Key OVH</label><input id="sm_ak" placeholder="votre AK"></div>
+ <div><label>Application Secret</label><input type="password" id="sm_as" placeholder="votre AS"></div>
+ <div><label>Consumer Key</label><input id="sm_ck" placeholder="votre CK"></div>
+ <div><label>Nom du service SMS (ex: sms-xx12345-1)</label><input id="sm_svc" placeholder="sms-xx12345-1"></div>
+</div>
+<button class="btn bb btn-sm" onclick="testSmsConfig()">🔌 Tester la connexion SMS</button>
+<span id="smLog" style="margin-left:10px;font-size:11px"></span>
+<p style="font-size:9px;color:var(--gr);margin-top:6px">Créez vos identifiants API sur <a href="https://eu.api.ovh.com/createToken/" target="_blank">eu.api.ovh.com/createToken</a> (droits GET+POST sur /sms/*). ~0.035€/SMS.</p>
+
+<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+ <button class="btn" style="background:var(--gm);color:#fff" onclick="sendBulletinSms()">📱 Notifier : nouveau bulletin dispo</button>
+ <button class="btn br" onclick="showAlertSms()">🚨 SMS d'alerte personnalisé</button>
+</div>
+<div id="smsLog" style="margin-top:10px"></div>
+</div>`;}
+function genPdf(){const cid=document.getElementById('pv_cl')?.value||document.getElementById('gn_cl')?.value;if(!cid||cid==='all'){genTous();return;}
+const a=document.createElement('a');a.href=`/api/generer/${cid}?format=pdf`;a.click();
+const log=document.getElementById('gnLog');if(log)log.innerHTML='<div class="al al-g">✅ PDF en cours</div>';}
+function genWord(){const cid=document.getElementById('pv_cl')?.value||document.getElementById('gn_cl')?.value;if(!cid||cid==='all'){genTous();return;}
+const a=document.createElement('a');a.href=`/api/generer/${cid}?format=docx`;a.click();
+const log=document.getElementById('gnLog');if(log)log.innerHTML='<div class="al al-g">✅ Word en cours</div>';}
+function genTous(){const a=document.createElement('a');a.href='/api/generer-tous';a.click();
+const log=document.getElementById('gnLog');if(log)log.innerHTML='<div class="al al-g">✅ ZIP PDF en cours</div>';}
+function genTraca(){const cid=document.getElementById('tr_cl')?.value;if(!cid){alert('Sélectionnez un client');return;}
+const a=document.createElement('a');a.href=`/api/tracabilite/${cid}?format=pdf`;a.click();}
+function genTracaWord(){const cid=document.getElementById('tr_cl')?.value;if(!cid){alert('Sélectionnez un client');return;}
+const a=document.createElement('a');a.href=`/api/tracabilite/${cid}?format=docx`;a.click();}
+
+async function uploadDoc(input, cid){
+ const f=input.files[0];if(!f)return;
+ const fd=new FormData();fd.append('file',f);if(cid)fd.append('client_id',cid);
+ const el=document.getElementById('docAdminList');
+ el.innerHTML='<span style="color:var(--bl)">⏳ Envoi en cours...</span>';
+ try{
+  const r=await fetch('/api/docs/upload',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.ok){await loadDocAdmin();}
+  else{el.innerHTML=`<span style="color:var(--rd)">❌ ${d.error}</span>`;}
+ }catch(e){el.innerHTML=`<span style="color:var(--rd)">❌ ${e.message}</span>`;}
+ input.value='';
+}
+async function loadDocAdmin(){
+ const el=document.getElementById('docAdminList');
+ if(!el)return;
+ el.innerHTML='<span style="color:var(--bl)">⏳ Chargement...</span>';
+ try{
+  const r=await fetch('/api/docs/list');const docs=await r.json();
+  if(!docs.length){el.innerHTML='<span style="color:var(--gr)">Aucun document. Ajoutez-en ci-dessus.</span><br><button class="btn bb btn-sm" style="margin-top:6px" onclick="loadDocAdmin()">🔄 Actualiser</button>';return;}
+  let h='<table><tr><th>Document</th><th>Destinataire</th><th>Taille</th><th>Actions</th></tr>';
+  docs.forEach(d=>{
+   const size=d.size>1024*1024?(d.size/1024/1024).toFixed(1)+' Mo':(d.size/1024).toFixed(0)+' Ko';
+   const cl=CLIENTS.find(c=>c.id===d.client_id);
+   const dest=d.scope==='tous'?'<span class="badge b-bio">Tous</span>':`<span class="badge b-hve">${cl?cl.exploitation:d.client_id}</span>`;
+   const scope=d.scope==='tous'?'communs':d.client_id;
+   h+=`<tr><td>📄 <strong>${d.name}</strong></td><td>${dest}</td><td>${size}</td>
+    <td><a href="/api/docs/download/${scope}/${encodeURIComponent(d.name)}" target="_blank" class="btn btn-sm bg" style="margin-right:4px">👁️</a>
+    <button class="btn btn-sm btn-del" onclick="deleteDoc('${d.name}','${d.client_id||''}')">🗑</button></td></tr>`;
+  });
+  h+='</table><button class="btn bb btn-sm" style="margin-top:8px" onclick="loadDocAdmin()">🔄 Actualiser</button>';
+  el.innerHTML=h;
+ }catch(e){el.innerHTML=`<span style="color:var(--rd)">❌ ${e.message}</span>`;}
+}
+async function deleteDoc(name,cid){
+ if(!confirm(`Supprimer "${name}" ?`))return;
+ await api('/api/docs/delete',{method:'POST',body:JSON.stringify({name,client_id:cid||null})});
+ loadDocAdmin();
+}
+async function genTokens(){
+ const el=document.getElementById('portailLinks');
+ el.innerHTML='<span style="color:var(--bl)">⏳ Chargement...</span>';
+ // 1. Charger les liens existants
+ let r=await fetch('/api/portail/liens');let clients=await r.json();
+ // 2. Générer uniquement pour ceux qui n'ont pas encore de token
+ const sansToken=clients.filter(c=>!c.portail_token);
+ if(sansToken.length>0){
+  await fetch('/api/portail/generer-tokens',{method:'POST'});
+  r=await fetch('/api/portail/liens');clients=await r.json();
+ }
+ const baseUrl='https://portail.sasu-viti-sens.fr';
+ let h='<table><tr><th>Client</th><th>Commune</th><th>Certif.</th><th>Lien</th><th>SMS</th></tr>';
+ clients.forEach(c=>{
+  if(!c.portail_token){h+=`<tr><td>${c.exploitation}</td><td>${c.commune||''}</td><td>—</td><td colspan="2" style="color:var(--gr)">Pas de token</td></tr>`;return;}
+  const url=c.portail_slug?`${baseUrl}/portail-s/${c.portail_slug}`:`${baseUrl}/portail/${c.portail_token}`;
+  const hasTel=c.telephone?true:false;
+  const cert=c.certification||'Conv.';
+  const bc=cert==='Bio'?'b-bio':cert==='HVE'?'b-hve':cert==='VDC'?'b-vdc':'b-conv';
+  h+=`<tr>
+   <td><strong>${c.exploitation}</strong></td>
+   <td>${c.commune||''}</td>
+   <td><span class="badge ${bc}">${cert}</span></td>
+   <td style="font-size:9px"><a href="${url}" target="_blank" style="color:var(--bl)">🔗 Ouvrir</a></td>
+   <td style="text-align:center">
+    ${hasTel
+     ?`<button class="btn btn-sm" id="sms_port_${c.id}" style="background:var(--gm);color:#fff;font-size:10px" onclick="sendPortailSms('${c.id}','${c.telephone}','${(c.interlocuteur||'').split(' ').pop().replace(/'/g,"\\'")}','${url}','${c.exploitation.replace(/'/g,"\\'")}')">📱 SMS</button>`
+     :`<span style="color:var(--gr);font-size:10px">pas de tél.</span>`
+    }
+   </td>
+  </tr>`;
+ });
+ h+='</table>';
+ h+=`<p style="font-size:9px;color:var(--gr);margin-top:8px">💡 Le SMS envoie le lien d'accès unique au client. Il ne change jamais sauf si vous régénérez les tokens.</p>`;
+ el.innerHTML=h;
+}
+
+async function sendPortailSms(cid, tel, prenom, url, exploitation){
+ const msg=`Bonjour ${prenom}, votre espace VITI Sens évolue ! Bulletins, météo et suivi des traitements : ${url}`;
+ const charCount=msg.length;
+ if(!confirm(`Envoyer le lien portail à ${exploitation} (${tel}) ?\n\n${msg}\n\n${charCount} caractères (${charCount<=160?'✅ 1 SMS':'⚠️ '+Math.ceil(charCount/153)+' SMS'})`))return;
+ const btn=document.getElementById('sms_port_'+cid);
+ if(btn){btn.disabled=true;btn.textContent='⏳';}
+ try{
+  const r=await api('/api/sms-send',{method:'POST',body:JSON.stringify({
+   message:msg,
+   clients:[cid]
+  })});
+  const d=await r.json();
+  const res=d.results?.[0];
+  if(btn){
+   if(res?.status==='ok'){
+    btn.textContent='✅ Envoyé';
+    btn.style.background='#4CAF50';
+    btn.disabled=true;
+   }else{
+    btn.textContent='❌ Erreur';
+    btn.style.background='var(--rd)';
+    btn.disabled=false;
+   }
+  }
+ }catch(e){if(btn){btn.textContent='❌';btn.disabled=false;}}
+}
+
+async function prepEmail(){
+ const cid=document.getElementById('pv_cl')?.value||document.getElementById('gn_cl')?.value;
+ if(!cid||cid==='all'){prepAllEmails();return;}
+ const c=CLIENTS.find(x=>x.id===cid);
+ if(!c){alert('Client non trouvé');return;}
+ if(!c.email){alert('Pas d\'email pour ce client.');return;}
+ const log=document.getElementById('gnLog');
+ if(log)log.innerHTML='<div class="al al-b">⏳ Génération du PDF + création du brouillon...</div>';
+ try{
+  const r=await fetch(`/api/email-draft/${cid}`);const d=await r.json();
+  if(d.ok){if(log)log.innerHTML=`<div class="al al-g">✅ ${d.message}<br><span style="font-size:10px">Ouvrez votre webmail OVH ou Outlook → Brouillons. L'email est prêt avec le PDF en pièce jointe.</span></div>`;}
+  else{if(log)log.innerHTML=`<div class="al al-r">❌ ${d.error}</div>`;}
+ }catch(e){if(log)log.innerHTML=`<div class="al al-r">❌ ${e.message}</div>`;}
+}
+async function prepAllEmails(){
+ let chk='';CLIENTS.forEach(c=>{
+  chk+=`<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:11px;cursor:pointer;border-bottom:1px solid #f3f4f6"><input type="checkbox" class="em_cl_chk" value="${c.id}" ${c.email?'checked':'disabled'} style="flex-shrink:0;width:16px;height:16px"> <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.exploitation}</span> <span class="badge ${c.certification==='Bio'?'b-bio':c.certification==='HVE'?'b-hve':c.certification==='VDC'?'b-vdc':'b-conv'}" style="flex-shrink:0">${c.certification||'Conv.'}</span> ${c.email?'<span style="font-size:8px;color:var(--gr);flex-shrink:0">✉️</span>':'<span style="font-size:8px;color:var(--rd);flex-shrink:0">pas d\'email</span>'}</label>`;
+ });
+ document.getElementById('MC').innerHTML=`<h3>✉️ Préparer les emails</h3>
+<p style="font-size:11px;color:var(--gr);margin-bottom:8px">Sélectionnez les clients. Un brouillon avec le bulletin PDF en PJ sera créé pour chacun.</p>
+<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
+ <button class="btn btn-sm" style="background:var(--bbg);color:var(--bl)" onclick="document.querySelectorAll('.em_cl_chk:not(:disabled)').forEach(c=>c.checked=true)">Tous</button>
+ <button class="btn btn-sm" style="background:#f3f4f6" onclick="document.querySelectorAll('.em_cl_chk').forEach(c=>c.checked=false)">Aucun</button>
+ <button class="btn btn-sm" style="background:#e8f5e9;color:var(--gd)" onclick="CLIENTS.forEach(c=>{const el=document.querySelector('.em_cl_chk[value='+JSON.stringify(c.id)+']');if(el)el.checked=c.certification==='Bio';})">Bio</button>
+ <button class="btn btn-sm" style="background:var(--bbg);color:var(--bl)" onclick="CLIENTS.forEach(c=>{const el=document.querySelector('.em_cl_chk[value='+JSON.stringify(c.id)+']');if(el)el.checked=c.certification==='HVE';})">HVE</button>
+ <button class="btn btn-sm" style="background:var(--obg);color:var(--or)" onclick="CLIENTS.forEach(c=>{const el=document.querySelector('.em_cl_chk[value='+JSON.stringify(c.id)+']');if(el)el.checked=c.certification!=='Bio';})">Conv.</button>
+</div>
+<div style="max-height:250px;overflow-y:auto;border:1px solid #d1d5db;border-radius:5px;padding:4px;background:#fff">${chk}</div>
+<div style="margin-top:12px"><button class="btn" style="background:var(--gm);color:#fff" onclick="execAllEmails()">✉️ Créer les brouillons</button> <button class="btn btn-sm" style="background:#f3f4f6;margin-left:6px" onclick="closeModal()">Annuler</button></div>`;
+ document.getElementById('modal').classList.add('show');
+}
+async function execAllEmails(){
+ const checked=[...document.querySelectorAll('.em_cl_chk:checked')].map(c=>c.value);
+ if(!checked.length){alert('Sélectionnez au moins un client');return;}
+ closeModal();
+ const log=document.getElementById('gnLog');
+ log.innerHTML=`<div class="al al-b">⏳ Génération des PDF + création des brouillons pour ${checked.length} client(s)...</div>`;
+ try{
+  const r=await fetch('/api/email-draft-tous?clients='+checked.join(','));const d=await r.json();
+  if(d.error){log.innerHTML=`<div class="al al-r">❌ ${d.error}</div>`;return;}
+  let html='';let ok=0,skip=0,err=0;
+  for(const res of d.results){
+   if(res.status==='ok'){html+=`<div class="al al-g">✅ ${res.client} — ${res.message}</div>`;ok++;}
+   else if(res.status==='skip'){html+=`<div class="al al-o">⚠️ ${res.client} — ${res.message}</div>`;skip++;}
+   else{html+=`<div class="al al-r">❌ ${res.client} — ${res.message}</div>`;err++;}
+  }
+  html=`<div class="al al-b" style="margin-bottom:8px">📬 <strong>${ok} brouillon(s)</strong> créés${skip?' · '+skip+' sans email':''}${err?' · '+err+' erreur(s)':''}<br><span style="font-size:10px">Ouvrez votre webmail. Chaque email contient le PDF. Relisez et envoyez.</span></div>`+html;
+  log.innerHTML=html;
+ }catch(e){log.innerHTML=`<div class="al al-r">❌ ${e.message}</div>`;}
+}
+async function testEmailConfig(){
+ const srv=document.getElementById('em_srv').value;
+ const port=document.getElementById('em_port').value;
+ const email=document.getElementById('em_from').value;
+ const pwd=document.getElementById('em_pwd').value;
+ if(!pwd){alert('Saisissez votre mot de passe');return;}
+ const log=document.getElementById('emLog');
+ log.innerHTML='<span style="color:var(--bl)">⏳ Test de connexion...</span>';
+ try{
+  const r=await api('/api/email-config',{method:'POST',body:JSON.stringify({imap_server:srv,imap_port:parseInt(port),email_from:email,password:pwd})});
+  const d=await r.json();
+  if(d.ok)log.innerHTML=`<span style="color:var(--gd)">✅ ${d.message}</span>`;
+  else log.innerHTML=`<span style="color:var(--rd)">❌ ${d.error}</span>`;
+ }catch(e){log.innerHTML=`<span style="color:var(--rd)">❌ ${e.message}</span>`;}
+}
+async function importXL(input){const f=input.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);
+const r=await fetch('/api/import-excel',{method:'POST',body:fd});const d=await r.json();
+if(d.ok){alert('✅ Import réussi');init();}else alert('❌ '+d.error);}
+
+// ===== SMS =====
+async function testSmsConfig(){
+ const log=document.getElementById('smLog');
+ log.innerHTML='<span style="color:var(--bl)">⏳ Test...</span>';
+ try{
+  const r=await api('/api/sms-config',{method:'POST',body:JSON.stringify({
+   ak:document.getElementById('sm_ak').value,
+   as_:document.getElementById('sm_as').value,
+   ck:document.getElementById('sm_ck').value,
+   service:document.getElementById('sm_svc').value
+  })});const d=await r.json();
+  if(d.ok)log.innerHTML=`<span style="color:var(--gd)">✅ ${d.message}</span>`;
+  else log.innerHTML=`<span style="color:var(--rd)">❌ ${d.error}</span>`;
+ }catch(e){log.innerHTML=`<span style="color:var(--rd)">❌ ${e.message}</span>`;}
+}
+
+async function sendBulletinSms(){
+ let chk='';CLIENTS.forEach(c=>{const tel=(c.telephone||'').trim();
+  chk+=`<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:11px;cursor:pointer;border-bottom:1px solid #f3f4f6"><input type="checkbox" class="smsb_cl_chk" value="${c.id}" ${tel?'checked':'disabled'} style="flex-shrink:0;width:16px;height:16px"> <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.exploitation}</span> ${tel?'<span style="color:var(--gr);font-size:9px;flex-shrink:0">'+tel+'</span>':'<span style="color:var(--rd);font-size:9px;flex-shrink:0">pas de tél.</span>'}</label>`;
+ });
+ document.getElementById('MC').innerHTML=`<h3>📱 Notification : nouveau bulletin disponible</h3>
+<p style="font-size:11px;color:var(--gr);margin-bottom:8px">Sélectionnez les clients à notifier par SMS :</p>
+<div style="margin-bottom:8px"><button class="btn btn-sm" style="background:var(--bbg);color:var(--bl)" onclick="document.querySelectorAll('.smsb_cl_chk:not(:disabled)').forEach(c=>c.checked=true)">Tous</button> <button class="btn btn-sm" style="background:#f3f4f6" onclick="document.querySelectorAll('.smsb_cl_chk').forEach(c=>c.checked=false)">Aucun</button></div>
+<div style="max-height:250px;overflow-y:auto;border:1px solid #d1d5db;border-radius:5px;padding:4px;background:#fff">${chk}</div>
+<div style="margin-top:12px"><button class="btn" style="background:var(--gm);color:#fff" onclick="execBulletinSms()">📱 Envoyer la notification</button> <button class="btn btn-sm" style="background:#f3f4f6;margin-left:6px" onclick="closeModal()">Annuler</button></div>`;
+ document.getElementById('modal').classList.add('show');
+}
+async function execBulletinSms(){
+ const checked=[...document.querySelectorAll('.smsb_cl_chk:checked')].map(c=>c.value);
+ if(!checked.length){alert('Sélectionnez au moins un client');return;}
+ if(!confirm(`Envoyer la notification SMS à ${checked.length} client(s) ?`))return;
+ closeModal();
+ const log=document.getElementById('smsLog');
+ log.innerHTML='<div class="al al-b">⏳ Envoi des SMS en cours...</div>';
+ try{
+  const r=await api('/api/sms-bulletin',{method:'POST',body:JSON.stringify({clients:checked})});const d=await r.json();
+  if(d.error){log.innerHTML=`<div class="al al-r">❌ ${d.error}</div>`;return;}
+  let html='';let ok=0,skip=0,err=0;
+  for(const res of d.results){
+   if(res.status==='ok'){html+=`<div class="al al-g">✅ ${res.client} ${res.message}</div>`;ok++;}
+   else if(res.status==='skip'){html+=`<div class="al al-o">⚠️ ${res.client} — ${res.message}</div>`;skip++;}
+   else{html+=`<div class="al al-r">❌ ${res.client} — ${res.message}</div>`;err++;}
+  }
+  log.innerHTML=`<div class="al al-b" style="margin-bottom:6px">📱 <strong>${ok} SMS envoyé(s)</strong>${skip?' · '+skip+' sans tél.':''}${err?' · '+err+' erreur(s)':''}</div>`+html;
+ }catch(e){log.innerHTML=`<div class="al al-r">❌ ${e.message}</div>`;}
+}
+
+function showAlertSms(){
+ let chk='';CLIENTS.forEach(c=>{const tel=(c.telephone||'').trim();
+  chk+=`<label style="display:flex;align-items:center;gap:4px;padding:3px 0;font-size:11px;cursor:pointer"><input type="checkbox" class="sms_cl_chk" value="${c.id}" ${tel?'checked':'disabled'}> ${c.exploitation} ${tel?'('+tel+')':'<span style="color:var(--rd)">pas de tél.</span>'}</label>`;
+ });
+ document.getElementById('MC').innerHTML=`<h3>🚨 SMS d'alerte personnalisé</h3>
+<p style="font-size:11px;color:var(--gr);margin-bottom:10px">Variables disponibles : <code>{prenom}</code> <code>{exploitation}</code></p>
+<div style="margin-bottom:10px">
+ <label style="font-size:10px;font-weight:600;color:var(--gr)">Message (160 car. max pour 1 SMS)</label>
+ <textarea id="sms_msg" style="min-height:80px" placeholder="Bonjour {prenom}, alerte gel ce soir sur votre secteur. Protégez vos parcelles. Florent Miguel - VITI Sens" oninput="document.getElementById('sms_count').textContent=this.value.length+'/160 car.'"></textarea>
+ <span id="sms_count" style="font-size:9px;color:var(--gr)">0/160 car.</span>
+</div>
+<div style="margin-bottom:10px">
+ <label style="font-size:10px;font-weight:600;color:var(--gr)">Modèles rapides</label>
+ <div style="display:flex;gap:4px;flex-wrap:wrap">
+  <button class="btn btn-sm" style="background:var(--bbg);color:var(--bl)" onclick="document.getElementById('sms_msg').value='Bonjour {prenom}, alerte gel annoncée cette nuit sur votre secteur. Protégez vos parcelles sensibles. Florent Miguel - VITI Sens'">🥶 Gel</button>
+  <button class="btn btn-sm" style="background:var(--obg);color:var(--or)" onclick="document.getElementById('sms_msg').value='Bonjour {prenom}, risque orage/grêle annoncé. Restez vigilant. Florent Miguel - VITI Sens'">⛈️ Orage/Grêle</button>
+  <button class="btn btn-sm" style="background:var(--rbg);color:var(--rd)" onclick="document.getElementById('sms_msg').value='Bonjour {prenom}, contamination mildiou confirmée. Intervenir dans les 48h si possible. Voir bulletin. Florent Miguel - VITI Sens'">🍄 Mildiou</button>
+  <button class="btn btn-sm" style="background:#e8f5e9;color:var(--gd)" onclick="document.getElementById('sms_msg').value='Bonjour {prenom}, fenêtre de traitement favorable demain matin. Conditions optimales avant 10h. Florent Miguel - VITI Sens'">🎯 Fenêtre trt</button>
+ </div>
+</div>
+<div style="margin-bottom:10px">
+ <label style="font-size:10px;font-weight:600;color:var(--gr)">Destinataires <button class="btn btn-sm" style="background:var(--bbg);color:var(--bl);margin-left:4px" onclick="document.querySelectorAll('.sms_cl_chk:not(:disabled)').forEach(c=>c.checked=true)">Tous</button> <button class="btn btn-sm" style="background:#f3f4f6;margin-left:2px" onclick="document.querySelectorAll('.sms_cl_chk').forEach(c=>c.checked=false)">Aucun</button></label>
+ <div style="max-height:150px;overflow-y:auto;border:1px solid #d1d5db;border-radius:5px;padding:6px">${chk}</div>
+</div>
+<div><button class="btn br" onclick="sendAlertSms()">🚨 Envoyer l'alerte</button> <button class="btn btn-sm" style="background:#f3f4f6;margin-left:6px" onclick="closeModal()">Annuler</button></div>`;
+ document.getElementById('modal').classList.add('show');
+}
+
+async function sendAlertSms(){
+ const msg=document.getElementById('sms_msg').value;
+ if(!msg){alert('Saisissez un message');return;}
+ const checked=[...document.querySelectorAll('.sms_cl_chk:checked')].map(c=>c.value);
+ if(!checked.length){alert('Sélectionnez au moins un client');return;}
+ if(!confirm(`Envoyer ce SMS à ${checked.length} client(s) ?\n\n${msg}`))return;
+ closeModal();
+ const log=document.getElementById('smsLog');
+ log.innerHTML='<div class="al al-b">⏳ Envoi en cours...</div>';
+ try{
+  const r=await api('/api/sms-send',{method:'POST',body:JSON.stringify({message:msg,clients:checked})});
+  const d=await r.json();
+  if(d.error){log.innerHTML=`<div class="al al-r">❌ ${d.error}</div>`;return;}
+  let html='';let ok=0,err=0;
+  for(const res of d.results){
+   if(res.status==='ok'){html+=`<div class="al al-g">✅ ${res.client} ${res.message}</div>`;ok++;}
+   else if(res.status==='skip'){html+=`<div class="al al-o">⚠️ ${res.client} — ${res.message}</div>`;}
+   else{html+=`<div class="al al-r">❌ ${res.client} — ${res.message}</div>`;err++;}
+  }
+  log.innerHTML=`<div class="al al-b" style="margin-bottom:6px">🚨 <strong>${ok} alerte(s) envoyée(s)</strong>${err?' · '+err+' erreur(s)':''}</div>`+html;
+ }catch(e){log.innerHTML=`<div class="al al-r">❌ ${e.message}</div>`;}
+}
+
+
+// ===== PORTAILS CLIENT =====
+function loadPortails(){
+ // Afficher sous-onglets
+ const el=document.getElementById('tc-portails');
+ el.innerHTML=`
+  <div style="padding:16px 16px 0">
+   <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #e5e7eb">
+    <button id="ptab-matu" onclick="showPortailTab('matu')"
+     style="padding:8px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid #2D6A4F;color:#2D6A4F;margin-bottom:-2px">
+     🍇 Maturité
+    </button>
+    <button id="ptab-phyto" onclick="showPortailTab('phyto')"
+     style="padding:8px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:#666">
+     🌿 Phyto
+    </button>
+   </div>
+  </div>
+  <div id="portail-matu"></div>
+  <div id="portail-phyto" style="display:none"></div>`;
+ showPortailTab('matu');
+}
+
+function showPortailTab(tab){
+ ['matu','phyto'].forEach(t=>{
+  const btn=document.getElementById('ptab-'+t);
+  const div=document.getElementById('portail-'+t);
+  const active=t===tab;
+  btn.style.borderBottom=active?'2px solid #2D6A4F':'2px solid transparent';
+  btn.style.color=active?'#2D6A4F':'#666';
+  div.style.display=active?'block':'none';
+ });
+ if(tab==='matu') loadPortailMatu();
+ else loadPortailPhyto();
+}
+
+const fmtD=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'2-digit'}):'';
+const certCol={'Bio':'#2E7D32','HVE':'#1565C0','VDC':'#9C27B0'};
+function certBadge(cert){
+ return `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${(certCol[cert]||'#999')}22;color:${certCol[cert]||'#999'};font-weight:600">${cert||'—'}</span>`;
+}
+function portailBtn(url){
+ return `<a href="${url}" target="_blank" style="display:inline-block;padding:5px 12px;background:#2D6A4F;color:#fff;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap">Ouvrir →</a>`;
+}
+
+async function loadPortailMatu(){
+ const el=document.getElementById('portail-matu');
+ if(el.dataset.loaded) return;
+ el.innerHTML='<div style="padding:20px;color:#666">Chargement...</div>';
+ try{
+  const data=await aj('/api/admin/portails');
+  const nbAlertes=data.filter(c=>c.maturite&&c.maturite.urgent).length;
+  const nbProches=data.filter(c=>c.maturite&&(c.maturite.score_moyen||0)>=70).length;
+  const nbSans=data.filter(c=>!c.maturite).length;
+
+  let h='<div style="padding:0 16px 16px">';
+  h+=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+   <div class="sc rd"><div class="sv">${nbAlertes}</div><div class="sl">Alertes urgentes</div></div>
+   <div class="sc or"><div class="sv">${nbProches}</div><div class="sl">Proches fenêtre</div></div>
+   <div class="sc"><div class="sv">${data.length}</div><div class="sl">Exploitations</div></div>
+   <div class="sc"><div class="sv">${nbSans}</div><div class="sl">Sans relevé</div></div>
+  </div>`;
+
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h+='<thead><tr style="background:#2D6A4F;color:#fff">';
+  ['Exploitation','Cert.','Parc.','Dernier relevé','Degré moy.','Score moy.','Alertes sanitaires','Portail'].forEach(col=>{
+   h+=`<th style="padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap">${col}</th>`;
+  });
+  h+='</tr></thead><tbody>';
+
+  data.forEach((c,i)=>{
+   const m=c.maturite;
+   const sc=m?m.score_moyen:null;
+   const scCol=sc===null?'#999':sc>=70?'#2E7D32':sc>=40?'#E65100':'#C62828';
+   const scBg=sc===null?'#f5f5f5':sc>=70?'#E8F5E9':sc>=40?'#FFF3E0':'#FFEBEE';
+   const alertes=m&&m.alertes?m.alertes.filter(a=>a&&a!=='None'):[];
+   const bg=i%2===0?'#fff':'#f9f8f6';
+   h+=`<tr style="background:${bg};border-bottom:.5px solid #e8e6e1;vertical-align:top">`;
+   h+=`<td style="padding:8px 10px"><strong>${c.exploitation}</strong></td>`;
+   h+=`<td style="padding:8px 10px">${certBadge(c.certification)}</td>`;
+   h+=`<td style="padding:8px 10px;text-align:center;color:#666">${c.nb_parcelles||0}</td>`;
+   h+=`<td style="padding:8px 10px;font-size:11px;color:#666;white-space:nowrap">${m?fmtD(m.date):'<span style="color:#ccc">—</span>'}</td>`;
+   h+=`<td style="padding:8px 10px;font-weight:700;text-align:center">${m&&m.degre_moyen!=null?m.degre_moyen+'%':'—'}</td>`;
+   h+=`<td style="padding:8px 10px;text-align:center"><span style="background:${scBg};color:${scCol};padding:3px 8px;border-radius:10px;font-weight:700">${sc!==null?sc+'/100':'—'}</span></td>`;
+   let aCell=alertes.length?alertes.map(a=>`<div style="font-size:10px;color:${a.includes('urgent')?'#C62828':'#E65100'};margin-bottom:2px">${a.includes('urgent')?'⚠️ ':''} ${a}</div>`).join(''):'<span style="color:#ccc">—</span>';
+   h+=`<td style="padding:8px 10px">${aCell}</td>`;
+   h+=`<td style="padding:8px 10px">${portailBtn(c.portail_url)}</td>`;
+   h+='</tr>';
+  });
+  h+='</tbody></table></div></div>';
+  el.innerHTML=h;
+  el.dataset.loaded='1';
+ }catch(e){el.innerHTML=`<div style="padding:16px"><div class="al al-r">Erreur : ${e.message}</div></div>`;}
+}
+
+async function loadPortailPhyto(){
+ const el=document.getElementById('portail-phyto');
+ if(el.dataset.loaded) return;
+ el.innerHTML='<div style="padding:20px;color:#666">Chargement...</div>';
+ try{
+  const data=await aj('/api/admin/portails-phyto');
+  const nbAvec=data.filter(c=>c.phyto).length;
+  const nbSans=data.filter(c=>!c.phyto).length;
+
+  let h='<div style="padding:0 16px 16px">';
+  h+=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+   <div class="sc"><div class="sv">${data.length}</div><div class="sl">Exploitations</div></div>
+   <div class="sc bl"><div class="sv">${nbAvec}</div><div class="sl">Avec prescriptions</div></div>
+   <div class="sc"><div class="sv">${nbSans}</div><div class="sl">Sans prescription</div></div>
+  </div>`;
+
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h+='<thead><tr style="background:#2D6A4F;color:#fff">';
+  ['Exploitation','Cert.','Dernier passage','Statut','Produits conseillés','Portail'].forEach(col=>{
+   h+=`<th style="padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap">${col}</th>`;
+  });
+  h+='</tr></thead><tbody>';
+
+  data.forEach((c,i)=>{
+   const ph=c.phyto;
+   const bg=i%2===0?'#fff':'#f9f8f6';
+   h+=`<tr style="background:${bg};border-bottom:.5px solid #e8e6e1;vertical-align:top">`;
+   h+=`<td style="padding:8px 10px"><strong>${c.exploitation}</strong></td>`;
+   h+=`<td style="padding:8px 10px">${certBadge(c.certification)}</td>`;
+   // Passage + date
+   if(ph){
+    h+=`<td style="padding:8px 10px"><span style="font-weight:700;color:#2D6A4F">${ph.passage}</span><div style="font-size:10px;color:#666">${fmtD(ph.date)}</div></td>`;
+    // Statut global
+    const app=ph.applique==='Oui';
+    h+=`<td style="padding:8px 10px"><span style="font-size:11px;padding:3px 8px;border-radius:10px;background:${app?'#E8F5E9':'#FFF3E0'};color:${app?'#2E7D32':'#E65100'};font-weight:600">${app?'✓ Appliqué':'⏳ Prévu'}</span></td>`;
+    // Produits
+    let pCell=ph.produits.map(p=>{
+     let s=`<div style="margin-bottom:5px;padding:5px 8px;background:#f5f5f5;border-radius:4px;border-left:3px solid #2D6A4F">`;
+     s+=`<div style="font-weight:600">${p.nom}</div>`;
+     if(p.sa) s+=`<div style="font-size:10px;color:#666">${p.sa}</div>`;
+     if(p.dose) s+=`<div style="font-size:10px;color:#1565C0">${p.dose}</div>`;
+     if(p.cible) s+=`<div style="font-size:10px;color:#9C27B0">Cible : ${p.cible}</div>`;
+     s+='</div>';
+     return s;
+    }).join('');
+    h+=`<td style="padding:8px 10px;min-width:220px">${pCell}</td>`;
+   } else {
+    h+='<td style="padding:8px 10px;color:#ccc">—</td>';
+    h+='<td style="padding:8px 10px;color:#ccc">—</td>';
+    h+='<td style="padding:8px 10px;color:#ccc">—</td>';
+   }
+   h+=`<td style="padding:8px 10px">${portailBtn(c.portail_url)}</td>`;
+   h+='</tr>';
+  });
+  h+='</tbody></table></div></div>';
+  el.innerHTML=h;
+  el.dataset.loaded='1';
+ }catch(e){el.innerHTML=`<div style="padding:16px"><div class="al al-r">Erreur : ${e.message}</div></div>`;}
+}
+
+// ===== OUTILS ADMIN =====
+function loadOutils(){
+ const el=document.getElementById('tc-outils');
+ el.innerHTML=`<div style="padding:20px;max-width:600px">
+  <div style="font-size:16px;font-weight:600;margin-bottom:16px">🔧 Outils administrateur</div>
+
+  <div style="border:.5px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:12px">
+   <div style="font-size:13px;font-weight:600;margin-bottom:4px">Effacer les rendements réels</div>
+   <div style="font-size:12px;color:#666;margin-bottom:10px">
+    Remet à zéro les rendements réels, kg cumulés et statuts de récolte pour tous les clients ou un client spécifique.<br>
+    <strong>Visible uniquement dans ce dashboard — pas sur les portails clients.</strong>
+   </div>
+   <div style="display:flex;gap:8px;margin-bottom:8px">
+    <select id="outils-client-sel" style="flex:1;padding:7px;border:.5px solid #e5e7eb;border-radius:6px;font-size:12px">
+     <option value="">— Tous les clients —</option>
+    </select>
+    <button onclick="outilsResetRdtReels()" style="background:#C62828;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Effacer</button>
+   </div>
+   <div id="outils-rdtreel-msg" style="font-size:11px;min-height:16px"></div>
+  </div>
+
+  <div style="border:.5px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:12px">
+   <div style="font-size:13px;font-weight:600;margin-bottom:4px">Normalisation communes</div>
+   <div style="font-size:12px;color:#666;margin-bottom:10px">Passe toutes les communes en majuscules dans la base de données.</div>
+   <button onclick="outilsFixCommunes()" style="background:#2D6A4F;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Convertir</button>
+   <span id="outils-communes-msg" style="font-size:11px;color:#666;margin-left:8px"></span>
+  </div>
+
+ </div>`;
+
+ // Charger la liste clients
+ aj('/api/clients').then(clients=>{
+  const sel=document.getElementById('outils-client-sel');
+  if(!sel) return;
+  clients.sort((a,b)=>a.exploitation.localeCompare(b.exploitation,'fr'));
+  clients.forEach(c=>{
+   const o=document.createElement('option');
+   o.value=c.id; o.textContent=c.exploitation;
+   sel.appendChild(o);
+  });
+ }).catch(()=>{});
+}
+
+async function outilsResetRdtReels(){
+ const cid=document.getElementById('outils-client-sel').value;
+ const who=cid?document.getElementById('outils-client-sel').options[document.getElementById('outils-client-sel').selectedIndex].text:'TOUS LES CLIENTS';
+ if(!confirm(`Effacer les rendements réels pour : ${who} ?\nCette action est irréversible.`)) return;
+ try{
+  const r=await aj('/api/admin/reset-rendements-reels',{method:'POST',body:JSON.stringify({id_client:cid||null})});
+  const msg=document.getElementById('outils-rdtreel-msg');
+  if(r.ok) msg.innerHTML=`<span style="color:#2E7D32">✅ ${r.updated} enregistrement(s) remis à zéro.</span>`;
+  else msg.innerHTML=`<span style="color:#C62828">Erreur</span>`;
+ }catch(e){ document.getElementById('outils-rdtreel-msg').textContent='Erreur : '+e.message; }
+}
+
+async function outilsFixCommunes(){
+ try{
+  const r=await aj('/api/admin/fix-communes');
+  document.getElementById('outils-communes-msg').textContent=r.message||'OK';
+ }catch(e){ document.getElementById('outils-communes-msg').textContent='Erreur'; }
+}
+</script>
+</body>
+</html>

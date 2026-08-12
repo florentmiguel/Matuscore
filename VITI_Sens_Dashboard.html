@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VITI Sens — Tableau de bord</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=Fraunces:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--gd:#2D6A4F;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--or:#E76F51;--obg:#FFF3E0;--rd:#C1121F;--rbg:#FFE0E0;--bl:#2196F3;--bbg:#E3F2FD;--gr:#6B7280;--glg:#F3F4F6;--bk:#1a1a1a;--wh:#FAFCF8;--rad:10px;--sh:0 2px 12px rgba(45,106,79,0.08)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:linear-gradient(160deg,#f7faf5,#eef5e8 40%,#f5f0e8);color:var(--bk);min-height:100vh}
+.hdr{background:var(--gd);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+.hdr h1{font-family:'Fraunces',serif;color:var(--wh);font-size:26px}
+.hdr .sub{color:var(--gl);font-size:12px;margin-top:2px}
+.hdr-r{display:flex;align-items:center;gap:14px;color:var(--gl);font-size:13px}
+.dot{width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block}.dot.ok{background:#22c55e}
+.wrap{max-width:1400px;margin:0 auto;padding:20px}
+.load{background:var(--wh);border-radius:var(--rad);padding:40px;text-align:center;box-shadow:var(--sh);margin-bottom:20px;border:2px dashed var(--gl)}
+.load h2{color:var(--gd);margin-bottom:10px;font-family:'Fraunces',serif}
+.load p{color:var(--gr);margin-bottom:16px}
+.btn{padding:10px 22px;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{transform:translateY(-1px);box-shadow:var(--sh)}
+.bg{background:var(--gd);color:#fff}.bo{background:var(--or);color:#fff}.bb{background:var(--bl);color:#fff}.br{background:var(--rd);color:#fff}
+.btn-o{background:transparent;border:2px solid var(--gd);color:var(--gd)}.btn-o:hover{background:var(--gd);color:#fff}
+.tabs{display:flex;gap:3px;margin-bottom:20px;background:var(--wh);border-radius:var(--rad);padding:4px;box-shadow:var(--sh)}
+.tab{padding:10px 18px;border:none;background:transparent;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:var(--gr);cursor:pointer;border-radius:7px;transition:all .2s}
+.tab:hover{background:var(--glg)}.tab.act{background:var(--gd);color:#fff}
+.tc{display:none}.tc.act{display:block}
+.card{background:var(--wh);border-radius:var(--rad);box-shadow:var(--sh);padding:22px;margin-bottom:18px}
+.ct{font-family:'Fraunces',serif;font-size:17px;color:var(--gd);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.g7{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+.sc{background:var(--wh);border-radius:var(--rad);padding:18px;box-shadow:var(--sh);text-align:center;border-left:4px solid var(--gd)}
+.sv{font-family:'Fraunces',serif;font-size:30px;font-weight:700;color:var(--gd)}
+.sl{color:var(--gr);font-size:11px;margin-top:3px}
+.sc.or{border-left-color:var(--or)}.sc.or .sv{color:var(--or)}
+.sc.rd{border-left-color:var(--rd)}.sc.rd .sv{color:var(--rd)}
+.sc.bl{border-left-color:var(--bl)}.sc.bl .sv{color:var(--bl)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--gd);color:#fff;padding:9px 10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+th.or{background:var(--or)}th.bl{background:var(--bl)}
+td{padding:9px 10px;border-bottom:1px solid #e5e7eb}
+tr:hover td{background:var(--gbg)}
+.bd{display:inline-block;padding:2px 9px;border-radius:16px;font-size:10px;font-weight:600}
+.bd-n{background:#e8f5e9;color:#2e7d32}.bd-f{background:#e8f5e9;color:#2e7d32}
+.bd-m{background:var(--obg);color:#e65100}.bd-e{background:var(--rbg);color:var(--rd)}.bd-te{background:var(--rd);color:#fff}
+.bd-bio{background:#e8f5e9;color:var(--gd)}.bd-hve{background:var(--bbg);color:var(--bl)}
+.bd-vdc{background:var(--obg);color:var(--or)}.bd-conv{background:var(--glg);color:var(--gr)}
+.md{background:var(--wh);border-radius:var(--rad);padding:14px;text-align:center;box-shadow:var(--sh);transition:all .2s}
+.md:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(45,106,79,.12)}
+.md .dn{font-weight:700;font-size:12px;color:var(--gd)}.md .dd{font-size:10px;color:var(--gr);margin-bottom:6px}
+.md .tp{font-family:'Fraunces',serif;font-size:22px;margin:6px 0}.md .tm{color:var(--bl);font-size:12px}
+.md .rn{font-size:12px;color:var(--bl);margin-top:4px}
+.ri{margin-top:6px;padding:3px 7px;border-radius:5px;font-size:10px;font-weight:600;display:inline-block}
+.ri-n{background:#e8f5e9;color:#2e7d32}.ri-l{background:#fff9c4;color:#f57f17}
+.ri-m{background:var(--obg);color:#e65100}.ri-h{background:var(--rbg);color:var(--rd)}
+.cb{margin:10px 0}.cbg{background:#e5e7eb;border-radius:8px;height:22px;overflow:hidden;position:relative}
+.cbf{height:100%;border-radius:8px;transition:width .5s}.cbl{font-size:11px;color:var(--gr);margin-top:3px;display:flex;justify-content:space-between}
+.al{padding:14px 18px;border-radius:var(--rad);margin-bottom:14px;font-size:13px;display:flex;align-items:flex-start;gap:10px}
+.al-r{background:var(--rbg);border-left:4px solid var(--rd)}
+.al-o{background:var(--obg);border-left:4px solid var(--or)}
+.al-g{background:#e8f5e9;border-left:4px solid var(--gm)}
+.al-b{background:var(--bbg);border-left:4px solid var(--bl)}
+.al strong{display:block;margin-bottom:3px}
+select{padding:7px 10px;border:2px solid var(--gl);border-radius:7px;font-family:'DM Sans',sans-serif;font-size:13px;background:#fff;cursor:pointer}
+select:focus{outline:none;border-color:var(--gd)}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div><h1>🍇 VITI Sens</h1><div class="sub">Tableau de bord — Campagne 2026</div></div>
+  <div class="hdr-r"><span id="hDate"></span><span class="dot" id="sDot" title="Base non chargée"></span></div>
+</div>
+<div class="wrap">
+  <div class="load" id="loadSec">
+    <h2>Charger votre base de données</h2>
+    <p>Sélectionnez <strong>VITI_Sens_Base_Donnees_2026.xlsx</strong></p>
+    <label class="btn bg" for="fIn">📂 Charger le fichier Excel</label>
+    <input type="file" id="fIn" accept=".xlsx,.xls" style="display:none">
+  </div>
+  <div id="dash" class="hidden">
+    <div class="tabs">
+      <button class="tab act" data-t="overview">📊 Vue d'ensemble</button>
+      <button class="tab" data-t="meteo">🌤️ Météo 7j</button>
+      <button class="tab" data-t="clients">👥 Clients</button>
+      <button class="tab" data-t="phyto">💊 Catalogue Phyto</button>
+      <button class="tab" data-t="generate">📄 Générer bulletins</button>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div class="tc act" id="tc-overview">
+      <div class="g4" id="stats"></div>
+      <div style="height:16px"></div>
+      <div id="alerts"></div>
+      <div class="g2">
+        <div class="card"><div class="ct">🌡️ Météo — 7 jours</div><div id="metPrev"><button class="btn bb" onclick="fetchMeteo()">🔄 Charger Open-Meteo</button></div></div>
+        <div class="card"><div class="ct">🍄 Risque mildiou</div><div id="riskPrev"><p style="color:var(--gr);font-size:12px">Chargez la météo pour calculer le risque.</p></div></div>
+      </div>
+      <div class="card hidden" id="cuCard"><div class="ct">🟤 Suivi cuivre — Clients Bio</div><div id="cuContent"></div></div>
+    </div>
+
+    <!-- METEO -->
+    <div class="tc" id="tc-meteo">
+      <div class="card">
+        <div class="ct">🌤️ Prévisions 7 jours — Reims / Épernay</div>
+        <div style="margin-bottom:14px"><button class="btn bb" onclick="fetchMeteo()">🔄 Actualiser</button><span style="font-size:11px;color:var(--gr);margin-left:10px" id="metTs"></span></div>
+        <div class="g7" id="metGrid"></div>
+      </div>
+      <div class="card"><div class="ct">🍄 Analyse risque mildiou jour par jour</div><div id="riskTbl"></div></div>
+    </div>
+
+    <!-- CLIENTS -->
+    <div class="tc" id="tc-clients">
+      <div class="card"><div class="ct">👥 Base clients</div><div class="table-wrap" id="cliTbl"></div></div>
+    </div>
+
+    <!-- PHYTO -->
+    <div class="tc" id="tc-phyto">
+      <div style="margin-bottom:14px">
+        <span style="font-weight:600;margin-right:10px">Filtrer par certification :</span>
+        <select id="phytoFilter" onchange="renderPhyto()">
+          <option value="all">Tous</option><option value="Bio">Bio</option><option value="HVE">HVE</option><option value="VDC">VDC</option><option value="Conventionnel">Conventionnel</option>
+        </select>
+        <span style="margin-left:14px;font-weight:600;margin-right:10px">Cible :</span>
+        <select id="cibleFilter" onchange="renderPhyto()">
+          <option value="all">Toutes</option><option value="mildiou">Mildiou</option><option value="dium">Oïdium</option><option value="botrytis">Botrytis</option>
+        </select>
+      </div>
+      <div class="card"><div class="ct">💊 Catalogue phytosanitaire</div><div class="table-wrap" id="phyTbl"></div></div>
+    </div>
+
+    <!-- GENERATE -->
+    <div class="tc" id="tc-generate">
+      <div class="card">
+        <div class="ct">📄 Génération de bulletins personnalisés</div>
+        <p style="color:var(--gr);font-size:13px;margin-bottom:16px">Sélectionnez un client et cliquez pour générer son bulletin Word avec les produits filtrés par certification, le risque mildiou calculé et la météo 7 jours.</p>
+        <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <select id="genClient"><option value="all">— Tous les clients —</option></select>
+          <button class="btn bg" onclick="generateBulletin()">📄 Générer le bulletin Word</button>
+          <button class="btn btn-o" onclick="generateAll()">📦 Générer tous les bulletins</button>
+        </div>
+        <div id="genLog" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== STATE =====
+let DB = { clients: [], catalogue: [], suivi: [], meteo: [], regles: [] };
+let METEO_DATA = null;
+const COORDS = { lat: 49.25, lon: 3.96 }; // Épernay approx
+
+// ===== DATE =====
+document.getElementById('hDate').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+// ===== FILE INPUT =====
+document.getElementById('fIn').addEventListener('change', function(){ loadExcel(this); });
+
+// ===== TABS =====
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', function(){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('act'));
+  document.querySelectorAll('.tc').forEach(x=>x.classList.remove('act'));
+  this.classList.add('act');
+  document.getElementById('tc-'+this.dataset.t).classList.add('act');
+}));
+
+// ===== LOAD EXCEL =====
+function loadExcel(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const wb = XLSX.read(e.target.result, {type:'array'});
+    // Parse sheets
+    DB.clients = XLSX.utils.sheet_to_json(wb.Sheets['Clients']||{}, {range:1}).filter(r=>r['ID']&&r['Exploitation']);
+    DB.catalogue = XLSX.utils.sheet_to_json(wb.Sheets['Catalogue Phyto']||{}, {range:1}).filter(r=>r['ID Produit']&&r['Nom commercial']);
+    DB.suivi = XLSX.utils.sheet_to_json(wb.Sheets['Suivi campagne']||{}, {range:1}).filter(r=>r['Date visite']);
+    DB.meteo = XLSX.utils.sheet_to_json(wb.Sheets['Météo']||{}, {range:1}).filter(r=>r['Date']);
+
+    document.getElementById('loadSec').classList.add('hidden');
+    document.getElementById('dash').classList.remove('hidden');
+    document.getElementById('sDot').classList.add('ok');
+    document.getElementById('sDot').title = 'Base chargée';
+
+    renderAll();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ===== RENDER ALL =====
+function renderAll(){
+  renderStats();
+  renderAlerts();
+  renderClients();
+  renderPhyto();
+  renderCopper();
+  renderGenSelect();
+}
+
+// ===== STATS =====
+function renderStats(){
+  const nCli = DB.clients.length;
+  const nProd = DB.catalogue.length;
+  const nBio = DB.clients.filter(c=>(c['Certification']||'')=='Bio').length;
+  const nSuivi = DB.suivi.length;
+  document.getElementById('stats').innerHTML = `
+    <div class="sc"><div class="sv">${nCli}</div><div class="sl">Clients</div></div>
+    <div class="sc or"><div class="sv">${nProd}</div><div class="sl">Produits phyto</div></div>
+    <div class="sc bl"><div class="sv">${nSuivi}</div><div class="sl">Observations terrain</div></div>
+    <div class="sc rd"><div class="sv">${nBio}</div><div class="sl">Clients Bio (suivi Cu)</div></div>
+  `;
+}
+
+// ===== ALERTS =====
+function renderAlerts(){
+  let html = '';
+  // Check bio copper
+  DB.clients.filter(c=>c['Certification']=='Bio').forEach(c=>{
+    const cu = c['Cu cumulé saison (g/ha)'] || 0;
+    if(cu > 3000) html += `<div class="al al-r"><span>⚠️</span><div><strong>${c['Exploitation']} — Cuivre critique</strong>${cu} g/ha consommés sur 4000 autorisés (${(cu/4000*100).toFixed(0)}%)</div></div>`;
+  });
+  // Check gel history
+  const gelClients = DB.clients.filter(c=>c['Historique gel (années)']);
+  if(gelClients.length) html += `<div class="al al-o"><span>❄️</span><div><strong>${gelClients.length} client(s) avec historique gel</strong>Vérifier les dégâts récents (épisodes 27/03, 02-03/04)</div></div>`;
+  document.getElementById('alerts').innerHTML = html;
+}
+
+// ===== CLIENTS TABLE =====
+function renderClients(){
+  let html = '<table><thead><tr><th>ID</th><th>Exploitation</th><th>Commune</th><th>Surface</th><th>Cépages</th><th>Certification</th><th>Sencrop</th><th>Cu cumulé</th></tr></thead><tbody>';
+  DB.clients.forEach(c=>{
+    const cert = c['Certification']||'Conv.';
+    const bc = cert=='Bio'?'bd-bio':cert=='HVE'?'bd-hve':cert=='VDC'?'bd-vdc':'bd-conv';
+    html += `<tr>
+      <td>${c['ID']}</td><td><strong>${c['Exploitation']}</strong></td><td>${c['Commune']||''}</td>
+      <td>${c['Surface (ha)']||''} ha</td>
+      <td>${c['% Chardonnay']||0}% C / ${c['% Pinot Noir']||0}% PN / ${c['% Meunier']||0}% M</td>
+      <td><span class="bd ${bc}">${cert}</span></td>
+      <td>${c['Station Sencrop']||'—'}</td>
+      <td>${cert=='Bio'?(c['Cu cumulé saison (g/ha)']||0)+' g/ha':'—'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('cliTbl').innerHTML = html;
+}
+
+// ===== PHYTO TABLE =====
+function renderPhyto(){
+  const certF = document.getElementById('phytoFilter').value;
+  const cibF = document.getElementById('cibleFilter').value;
+  let prods = DB.catalogue.filter(p=>{
+    if(certF!='all'){
+      if(certF=='Bio' && p['Compatible Bio']!='Oui') return false;
+      if(certF=='HVE' && p['Compatible HVE']!='Oui') return false;
+      if(certF=='VDC' && p['Compatible VDC']=='Non') return false;
+    }
+    if(cibF!='all' && !(p['Cible']||'').toLowerCase().includes(cibF)) return false;
+    return true;
+  });
+  let html = `<table><thead><tr><th class="or">ID</th><th class="or">Produit</th><th class="or">Substance active</th><th class="or">Mode d'action</th><th class="or">Cible</th><th class="or">Type</th><th class="or">Dose</th><th class="or">Position</th><th class="or">Option</th><th class="or">Bio</th><th class="or">Notes</th></tr></thead><tbody>`;
+  prods.forEach(p=>{
+    const optC = p['Option (A/B/C)']=='A'?'background:#e8f5e9':p['Option (A/B/C)']=='C'?'background:#fff9c4':'';
+    html += `<tr>
+      <td>${p['ID Produit']}</td><td><strong>${p['Nom commercial']}</strong></td><td>${p['Substance(s) active(s)']||''}</td>
+      <td>${p["Mode d'action"]||''}</td><td>${p['Cible']||''}</td><td>${p['Type (C/P/S)']||''}</td>
+      <td>${p['Dose homologuée']||''}</td><td style="font-size:11px">${p['Position stratégie']||''}</td>
+      <td style="${optC};font-weight:700;text-align:center">${p['Option (A/B/C)']||''}</td>
+      <td>${p['Compatible Bio']=='Oui'?'✅':'❌'}</td>
+      <td style="font-size:10px;color:var(--gr)">${p['Notes']||''}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  html += `<p style="margin-top:10px;font-size:12px;color:var(--gr)">${prods.length} produit(s) affichés</p>`;
+  document.getElementById('phyTbl').innerHTML = html;
+}
+
+// ===== COPPER TRACKING =====
+function renderCopper(){
+  const bios = DB.clients.filter(c=>c['Certification']=='Bio');
+  if(!bios.length){ document.getElementById('cuCard').classList.add('hidden'); return; }
+  document.getElementById('cuCard').classList.remove('hidden');
+  let html = '';
+  bios.forEach(c=>{
+    const cu = c['Cu cumulé saison (g/ha)'] || 0;
+    const max = 4000;
+    const pct = Math.min((cu/max)*100, 100);
+    const rest = max - cu;
+    const col = pct > 80 ? 'var(--rd)' : pct > 50 ? 'var(--or)' : 'var(--gm)';
+    html += `<div style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>${c['Exploitation']}</strong>
+        <span style="font-size:13px;color:${col};font-weight:700">${rest} g/ha restants</span>
+      </div>
+      <div class="cb"><div class="cbg"><div class="cbf" style="width:${pct}%;background:${col}"></div></div>
+      <div class="cbl"><span>${cu} g/ha consommés</span><span>${max} g/ha autorisés</span></div></div>
+    </div>`;
+  });
+  document.getElementById('cuContent').innerHTML = html;
+}
+
+// ===== METEO - OPEN-METEO API =====
+async function fetchMeteo(){
+  document.getElementById('metPrev').innerHTML = '<div style="text-align:center;padding:20px"><div class="spinner" style="display:inline-block;width:24px;height:24px;border:3px solid var(--gl);border-top-color:var(--gd);border-radius:50%;animation:spin .8s linear infinite"></div><p style="color:var(--gr);margin-top:8px;font-size:12px">Chargement des prévisions...</p></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+  try{
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${COORDS.lat}&longitude=${COORDS.lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean&timezone=Europe/Paris&forecast_days=7`;
+    const res = await fetch(url);
+    const data = await res.json();
+    METEO_DATA = data;
+    renderMeteo(data);
+    renderMeteoPreview(data);
+    renderRiskAnalysis(data);
+    document.getElementById('metTs').textContent = 'Mis à jour : ' + new Date().toLocaleTimeString('fr-FR');
+  }catch(e){
+    document.getElementById('metPrev').innerHTML = `<div class="al al-r"><span>❌</span><div><strong>Erreur de connexion</strong>Vérifiez votre accès Internet. Erreur : ${e.message}</div></div>`;
+  }
+}
+
+function renderMeteo(data){
+  const days = data.daily;
+  let html = '';
+  const joursFr = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  for(let i=0;i<days.time.length;i++){
+    const d = new Date(days.time[i]);
+    const tmax = days.temperature_2m_max[i];
+    const tmin = days.temperature_2m_min[i];
+    const tmoy = ((tmax+tmin)/2).toFixed(1);
+    const pluie = days.precipitation_sum[i];
+    const risk = calcRisk(pluie, parseFloat(tmoy));
+    html += `<div class="md">
+      <div class="dn">${joursFr[d.getDay()]}</div>
+      <div class="dd">${d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})}</div>
+      <div class="tp">${Math.round(tmax)}°</div>
+      <div class="tm">${Math.round(tmin)}°</div>
+      <div class="rn">${pluie>0?'💧 '+pluie.toFixed(1)+' mm':'☀️ Sec'}</div>
+      <div class="ri ${risk.cls}">${risk.label}</div>
+    </div>`;
+  }
+  document.getElementById('metGrid').innerHTML = html;
+}
+
+function renderMeteoPreview(data){
+  const days = data.daily;
+  let html = '<div class="g7" style="grid-template-columns:repeat('+Math.min(days.time.length,4)+',1fr)">';
+  for(let i=0;i<Math.min(4,days.time.length);i++){
+    const d = new Date(days.time[i]);
+    const tmax = days.temperature_2m_max[i];
+    const pluie = days.precipitation_sum[i];
+    html += `<div class="md" style="padding:10px">
+      <div class="dd">${d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})}</div>
+      <div style="font-family:'Fraunces',serif;font-size:20px">${Math.round(tmax)}°</div>
+      <div style="font-size:11px;color:var(--bl)">${pluie>0?pluie.toFixed(1)+' mm':'Sec'}</div>
+    </div>`;
+  }
+  html += '</div>';
+  html += '<button class="btn bb" style="margin-top:10px;font-size:11px" onclick="document.querySelector(\'[data-t=meteo]\').click()">Voir détails →</button>';
+  document.getElementById('metPrev').innerHTML = html;
+}
+
+function calcRisk(pluie, tmoy){
+  if(pluie < 2) return {level:'nul',label:'Risque nul',cls:'ri-n'};
+  if(tmoy < 11) return {level:'faible',label:'T° limitante',cls:'ri-l'};
+  if(pluie >= 10) return {level:'eleve',label:'⚠️ Risque élevé',cls:'ri-h'};
+  return {level:'modere',label:'Risque modéré',cls:'ri-m'};
+}
+
+function renderRiskAnalysis(data){
+  const days = data.daily;
+  let html = '<table><thead><tr><th class="or">Date</th><th class="or">T° max</th><th class="or">T° min</th><th class="or">T° moy</th><th class="or">Pluie</th><th class="or">Risque mildiou</th><th class="or">Analyse</th></tr></thead><tbody>';
+  let anyRisk = false;
+  for(let i=0;i<days.time.length;i++){
+    const tmax = days.temperature_2m_max[i];
+    const tmin = days.temperature_2m_min[i];
+    const tmoy = ((tmax+tmin)/2).toFixed(1);
+    const pluie = days.precipitation_sum[i];
+    const risk = calcRisk(pluie, parseFloat(tmoy));
+    if(risk.level!='nul') anyRisk = true;
+    const bc = risk.level=='eleve'?'bd-e':risk.level=='modere'?'bd-m':risk.level=='faible'?'bd-f':'bd-n';
+    let analyse = 'Pas de risque — temps sec.';
+    if(pluie>=2 && parseFloat(tmoy)>=11) analyse = 'Pluie + T° suffisantes — contamination possible si sol humide et maturité acquise.';
+    else if(pluie>=2) analyse = 'Pluie significative mais T° moyenne insuffisante (< 11°C).';
+    else if(pluie>0) analyse = 'Pluie faible, sous le seuil de 2 mm.';
+    html += `<tr><td>${new Date(days.time[i]).toLocaleDateString('fr-FR')}</td><td>${tmax}°C</td><td>${tmin}°C</td><td>${tmoy}°C</td><td>${pluie} mm</td><td><span class="bd ${bc}">${risk.label}</span></td><td style="font-size:11px">${analyse}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('riskTbl').innerHTML = html;
+
+  // Update overview risk preview
+  if(anyRisk){
+    document.getElementById('riskPrev').innerHTML = `<div class="al al-o"><span>⚠️</span><div><strong>Risque de contamination détecté</strong>Au moins un jour avec conditions favorables. Consultez l'onglet Météo pour le détail.</div></div>`;
+  } else {
+    document.getElementById('riskPrev').innerHTML = `<div class="al al-g"><span>✅</span><div><strong>Pas de risque mildiou sur 7 jours</strong>Aucune journée ne réunit les conditions de contamination (pluie ≥ 2 mm + T° moy ≥ 11°C).</div></div>`;
+  }
+}
+
+// ===== GENERATE SELECT =====
+function renderGenSelect(){
+  const sel = document.getElementById('genClient');
+  sel.innerHTML = '<option value="all">— Tous les clients —</option>';
+  DB.clients.forEach(c=>{
+    sel.innerHTML += `<option value="${c['ID']}">${c['Exploitation']} (${c['Commune']||''}) — ${c['Certification']||''}</option>`;
+  });
+}
+
+// ===== GENERATE BULLETIN (simplified - creates downloadable text) =====
+function generateBulletin(){
+  const sel = document.getElementById('genClient').value;
+  const clients = sel=='all' ? DB.clients : DB.clients.filter(c=>c['ID']==sel);
+  if(!clients.length){ alert('Aucun client sélectionné'); return; }
+  
+  const log = document.getElementById('genLog');
+  log.innerHTML = '';
+  
+  clients.forEach(client => {
+    const cert = client['Certification'] || 'Conventionnel';
+    const prods = DB.catalogue.filter(p => {
+      if(cert=='Bio' && p['Compatible Bio']!='Oui') return false;
+      if(cert=='HVE' && p['Compatible HVE']!='Oui') return false;
+      return true;
+    });
+    
+    // Build text content
+    let txt = `FICHE DE CONSEIL TECHNIQUE PERSONNALISÉE\n`;
+    txt += `${'='.repeat(50)}\n`;
+    txt += `${client['Exploitation']} — ${new Date().toLocaleDateString('fr-FR')}\n\n`;
+    txt += `Commune : ${client['Commune']||'—'}\n`;
+    txt += `Surface : ${client['Surface (ha)']||'?'} ha\n`;
+    txt += `Certification : ${cert}\n`;
+    txt += `Cépages : ${client['% Chardonnay']||0}% Chard. / ${client['% Pinot Noir']||0}% PN / ${client['% Meunier']||0}% M\n\n`;
+    
+    if(cert=='Bio'){
+      const cu = client['Cu cumulé saison (g/ha)']||0;
+      txt += `⚠️ CUIVRE : ${cu} g/ha consommés / 4000 autorisés (${4000-cu} g/ha restants)\n\n`;
+    }
+    
+    txt += `MÉTÉO 7 JOURS\n${'-'.repeat(30)}\n`;
+    if(METEO_DATA){
+      const days = METEO_DATA.daily;
+      for(let i=0;i<days.time.length;i++){
+        const tmoy = ((days.temperature_2m_max[i]+days.temperature_2m_min[i])/2).toFixed(1);
+        const risk = calcRisk(days.precipitation_sum[i], parseFloat(tmoy));
+        txt += `${days.time[i]} : ${days.temperature_2m_min[i]}°/${days.temperature_2m_max[i]}° — ${days.precipitation_sum[i]} mm — ${risk.label}\n`;
+      }
+    } else {
+      txt += `Météo non chargée. Cliquez "Charger Open-Meteo" d'abord.\n`;
+    }
+    
+    txt += `\nPRODUITS PHYTOSANITAIRES DISPONIBLES (${cert})\n${'-'.repeat(30)}\n`;
+    txt += `${prods.length} produits compatibles :\n`;
+    prods.forEach(p=>{
+      txt += `  [${p['Option (A/B/C)']||'?'}] ${p['Nom commercial']} — ${p['Cible']||''} — ${p['Type (C/P/S)']||''} — ${p['Position stratégie']||''}\n`;
+    });
+    
+    txt += `\n${'='.repeat(50)}\nVITI Sens — Florent Miguel\nflorent.miguel@sasu-viti-sens.fr\n`;
+    
+    // Download as text file
+    const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+    const safeName = client['Exploitation'].replace(/[^a-zA-Z0-9àâéèêëïôùûüç\s-]/g,'').replace(/\s+/g,'_');
+    const fileName = `Bulletin_${safeName}_${new Date().toISOString().slice(0,10)}.txt`;
+    
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
+    
+    log.innerHTML += `<div class="al al-g"><span>✅</span><div><strong>${client['Exploitation']}</strong>Bulletin généré — ${prods.length} produits (${cert})</div></div>`;
+  });
+}
+
+function generateAll(){
+  document.getElementById('genClient').value = 'all';
+  generateBulletin();
+}
+</script>
+</body>
+</html>
