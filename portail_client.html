@@ -3841,7 +3841,7 @@ async function calcItineraire(payload){
         disp=[..._p1,..._p2,..._p3];
       }
       // Si plus rien dans la commune en cours → passer à la prochaine (déjà dans _p3)
-    }while(ii<disp.length&&kgJour2<kgJ2-0.01){const p=disp[ii];const dispo=kgJ2-kgJour2;const de=estD2(p,ds);const sa=p.surface_ha?Math.round(p.surface_ha*100*100)/100:null;const av=p.date_theo>ds;const mk=(kk,frac,sa2)=>({nom:p.nom,cepage:p.cepage,commune:p.commune,surface_ares:sa2,degre:p.degre,degre_estime:de,kg:kk,fraction:frac,rdt_source:p.rdt_source,date_theo:p.date_theo,avant_fenetre:av,id:p.id});if(!p.kg_restants){pj.push(mk(null,false,sa));p.kg_restants=0;}
+    }while(ii<disp.length&&kgJour2<kgJ2-0.01){const p=disp[ii];const dispo=kgJ2-kgJour2;const de=estD2(p,ds);const sa=p.surface_ha?Math.round(p.surface_ha*100*100)/100:null;const av=p.date_theo>ds;const mk=(kk,frac,sa2)=>({nom:p.nom,cepage:p.cepage,commune:p.commune,surface_ares:sa2,degre:p.degre,degre_estime:de,dyn_degre:p.dyn_degre,date_fiche_dernier:p.date_fiche_dernier,kg:kk,fraction:frac,rdt_source:p.rdt_source,date_theo:p.date_theo,avant_fenetre:av,id:p.id});if(!p.kg_restants){pj.push(mk(null,false,sa));p.kg_restants=0;}
       else{
         const _reste=p.kg_restants;
         if(_reste<=dispo){
@@ -4540,7 +4540,7 @@ function _itinRecalculerDepuis(fromJi, objectif, addD, dateDebutExplicite){
   _jvCount++;
   _itinData.itineraire.push({
    date:dateJour, jour:_itinData.itineraire.length+1,
-   parcelles:jourCourant.map(p=>({...p, degre_estime_recolte:_recalcDegre(p,dateJour), date_theo:dateJour})),
+   parcelles:jourCourant.map(p=>({...p, degre_estime:_recalcDegre(p,dateJour), date_theo:dateJour})),
    kg_total:jourCourant.reduce((s,p)=>s+(p.kg||0),0)
   });
   dateJour=_nextDay(dateJour);
@@ -4551,7 +4551,7 @@ function _itinRecalculerDepuis(fromJi, objectif, addD, dateDebutExplicite){
   return (s&&t)?Math.round(s*kg/t*100)/100:null;
  };
  const _recalcDegre=(p,date)=>{
-  if(p.degre==null||!p.date_fiche_dernier) return p.degre_estime_recolte!=null?p.degre_estime_recolte:null;
+  if(p.degre==null||!p.date_fiche_dernier) return p.degre_estime!=null?p.degre_estime:null;
   const jours=Math.max(0,(new Date(date+'T12:00:00')-new Date(p.date_fiche_dernier+'T12:00:00'))/86400000);
   return Math.round((p.degre+(p.dyn_degre||0)*jours)*10)/10;
  };
