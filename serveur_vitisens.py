@@ -2354,6 +2354,26 @@ def _normaliser_commune(s):
     return re.sub(r'[-\s]+', ' ', sans_accents.upper()).strip()
 
 
+CEPAGES_CANONIQUES = ['Chardonnay', 'Pinot Noir', 'Meunier', 'Voltis',
+                      'Pinot Blanc', 'Pinot Gris', 'Arbane', 'Petit Meslier']
+
+def _normaliser_cepage(s):
+    """Nettoie une saisie de cépage : retire le code couleur officiel parfois
+    accolé sur les documents administratifs (N=noir, B=blanc, G=gris — ex.
+    'MEUNIER N', 'CHARDONNAY B', 'PINOT NOIR N' tel qu'on le voit sur un CVI ou
+    une déclaration de récolte), puis fait correspondre à l'orthographe standard
+    déjà utilisée dans l'appli si le cépage est connu. Une saisie inconnue est
+    simplement nettoyée (espaces), jamais rejetée."""
+    if not s: return s
+    nettoye = re.sub(r'\s+[NBGnbg]$', '', s.strip()).strip()
+    if not nettoye: return s.strip()
+    cible = _normaliser_commune(nettoye)  # même normalisation (accents/casse/espaces)
+    for c in CEPAGES_CANONIQUES:
+        if _normaliser_commune(c) == cible:
+            return c
+    return nettoye
+
+
 def get_client_by_token_or_slug(identifier):
     """Récupère un client par token ou par slug"""
     conn = get_db()
@@ -3537,7 +3557,7 @@ def add_parcelle():
     conn = get_db()
     cur = conn.execute("""INSERT INTO parcelles (id_client,nom,lieu_dit,cepage,surface_cadastrale,nb_pieds_ha,commune,notes)
         VALUES (?,?,?,?,?,?,?,?)""",
-        (d['id_client'], d['nom'], d.get('lieu_dit'), d.get('cepage'),
+        (d['id_client'], d['nom'], d.get('lieu_dit'), _normaliser_cepage(d.get('cepage')),
          d.get('surface_cadastrale'), d.get('nb_pieds_ha'), d.get('commune'), d.get('notes')))
     conn.commit(); conn.close()
     return jsonify({"id": cur.lastrowid})
@@ -3547,7 +3567,7 @@ def update_parcelle(pid):
     d = request.json
     conn = get_db()
     conn.execute("""UPDATE parcelles SET nom=?,lieu_dit=?,cepage=?,surface_cadastrale=?,nb_pieds_ha=?,commune=?,notes=? WHERE id=?""",
-        (d['nom'], d.get('lieu_dit'), d.get('cepage'),
+        (d['nom'], d.get('lieu_dit'), _normaliser_cepage(d.get('cepage')),
          d.get('surface_cadastrale'), d.get('nb_pieds_ha'), d.get('commune'), d.get('notes'), pid))
     conn.commit(); conn.close()
     return jsonify({"ok": True})
@@ -3946,6 +3966,25 @@ def admin_fix_communes():
     return jsonify({"ok": True, "message": f"Communes et noms de parcelles convertis en majuscules ({n_parc} parcelles)"})
 
 
+@app.route('/api/admin/fix-cepages', methods=['GET', 'POST'])
+def admin_fix_cepages():
+    """Nettoie rétroactivement les cépages déjà enregistrés — retire les codes
+    couleur officiels ('MEUNIER N', 'CHARDONNAY B', 'PINOT NOIR N'...) et fait
+    correspondre à l'orthographe standard, pour fusionner ce qui était compté
+    comme des cépages distincts par erreur (ex. dans les dates cibles par cépage)."""
+    conn = get_db()
+    rows = conn.execute("SELECT id, cepage FROM parcelles WHERE cepage IS NOT NULL AND cepage != ''").fetchall()
+    n_modifiees = 0
+    for r in rows:
+        nettoye = _normaliser_cepage(r['cepage'])
+        if nettoye != r['cepage']:
+            conn.execute("UPDATE parcelles SET cepage=? WHERE id=?", (nettoye, r['id']))
+            n_modifiees += 1
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": f"{n_modifiees} parcelle(s) sur {len(rows)} corrigée(s)."})
+
+
 @app.route('/api/admin/reset-rendements-reels', methods=['POST'])
 def admin_reset_rendements_reels():
     """Efface tous les rendements réels et kg cumulés — admin uniquement."""
@@ -4090,7 +4129,7 @@ def _update_parcelle(client, pid):
         nb_pieds_ha=?, ecart_rangs=?, ecart_ceps=?, notes=?, est_exemple=?
         WHERE id=? AND id_client=?""",
         (d.get('nom') or p['nom'],
-         d.get('cepage') or p.get('cepage'),
+         _normaliser_cepage(d.get('cepage')) or p.get('cepage'),
          commune, surf_cad_ha, nb_pieds_ha,
          ecart_rangs, ecart_ceps,
          d.get('notes') or p.get('notes'),
