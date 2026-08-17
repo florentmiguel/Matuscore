@@ -4855,7 +4855,7 @@ function _renderItineraire(d){
   </div>`;
  }
  (d.itineraire||[]).forEach((j,ji)=>{
-  h+=`<div class="card" style="margin-bottom:8px" id="itin-jour-${ji}" data-jour="${ji}" ondragover="itinDragOver(event,${ji})" ondragenter="itinDragEnter(event,${ji})" ondragleave="itinDragLeave(event,${ji})" ondrop="itinDrop(event,${ji})" class="itin-drop-zone">`;
+  h+=`<div class="card" style="margin-bottom:8px" id="itin-jour-${ji}" data-jour="${ji}" ondragover="itinDragOver(event,'${j.date}')" ondragenter="itinDragEnter(event,'${j.date}')" ondragleave="itinDragLeave(event,'${j.date}')" ondrop="itinDrop(event,'${j.date}')" class="itin-drop-zone">`;
   h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">`;
   h+=`<div style="font-weight:700;font-size:13px;color:var(--gd)">Jour ${j.jour} &nbsp;·&nbsp; <span style="font-weight:400;font-size:12px">${fmtD(j.date)}</span></div>`;
   if(j.kg_total) h+=`<div style="font-size:13px;font-weight:700;color:var(--gm)">${j.kg_total.toLocaleString('fr-FR')} kg</div>`;
@@ -4882,8 +4882,8 @@ function _renderItineraire(d){
     const pid=p.id_parcelle||0;
     h+=`<div style="padding:4px 6px;border:.5px solid #f0ede8;border-radius:6px;margin-bottom:3px;cursor:grab;background:#fff"
      draggable="true"
-     ondragstart="itinDragStart(event,${ji},${pi})" ondragend="itinDragEnd(event)"
-     ondragover="itinIntraDragOver(event,${ji},${pi})" ondrop="itinIntraDrop(event,${ji},${pi})">`;
+     ondragstart="itinDragStart(event,'${j.date}',${p.id})" ondragend="itinDragEnd(event)"
+     ondragover="itinIntraDragOver(event,'${j.date}',${p.id})" ondrop="itinIntraDrop(event,'${j.date}',${p.id})">`;
     h+=`<div style="display:flex;justify-content:space-between;align-items:flex-start">`;
     const _nomAffiche=p.nom_cuvee?`${p.nom} -- ${p.nom_cuvee}`:p.nom;
     h+=`<div style="font-size:12px"><strong>${_nomAffiche}</strong>${src}${avTag}<span style="color:var(--gr);font-size:11px"> ${p.commune}${deg}${deStr}</span></div>`;
@@ -4917,8 +4917,12 @@ function _renderItineraire(d){
 }
 
 // ── Drag & Drop ──────────────────────────────────────────────────────────────
-var _drag={jour:-1,pi:-1,parcId:null,parcNom:null};
-var _drag = {jour:-1, pi:-1, parcId:null, parcNom:null, intraJour:false};
+// Adressage par (date du jour, id de parcelle) — jamais par position dans le
+// tableau affiché. Le rendu regroupe les parcelles par cépage pour l'affichage,
+// donc la position visuelle d'une parcelle NE correspond PAS à sa position réelle
+// dans j.parcelles dès qu'un jour mélange plusieurs cépages — adresser par index
+// causait des glissés aléatoires (bonne parcelle par coïncidence, ou mauvaise).
+var _drag = {date:null, parcId:null, parcNom:null, intraJour:false};
 var _scrollRaf = null;
 var _scrollDir = 0;
 
@@ -4945,7 +4949,7 @@ function _autoScroll(e){
 if(!window._dragScrollBound){
  window._dragScrollBound=true;
  document.addEventListener('dragover',function(e){
-  if(_drag.jour<0) return;
+  if(!_drag.date) return;
   const ZONE=100,y=e.clientY,wh=window.innerHeight;
   if(y<ZONE) _startScroll(-1);
   else if(y>wh-ZONE) _startScroll(1);
@@ -4955,9 +4959,10 @@ if(!window._dragScrollBound){
  document.addEventListener('drop',function(){ _stopScroll(); },{passive:true});
 }
 
-function itinDragStart(e,jour,pi){
- _drag.jour=jour;_drag.pi=pi;_drag.intraJour=false;
- const p=_itinData?.itineraire?.[jour]?.parcelles?.[pi];
+function itinDragStart(e,date,parcelleId){
+ _drag.date=date; _drag.intraJour=false;
+ const jour=_itinData?.itineraire?.find(j=>j.date===date);
+ const p=jour?.parcelles?.find(q=>q.id===parcelleId);
  _drag.parcId=p?.id??null;_drag.parcNom=p?.nom??null;
  e.dataTransfer.effectAllowed='move';
  e.dataTransfer.setData('text/plain','move');
@@ -4967,43 +4972,46 @@ function itinDragEnd(e){
  e.target.style.opacity='1';
  document.querySelectorAll('.itin-drop-zone').forEach(el=>{el.style.outline='';el.style.background='';});
  document.querySelectorAll('.itin-parc-insert').forEach(el=>el.remove());
- _stopScroll(); _drag.jour=-1;
+ _stopScroll(); _drag.date=null;
 }
-function itinDragEnter(e,jour){
- if(_drag.jour<0||_drag.intraJour||_drag.jour===jour) return;
+function itinDragEnter(e,date){
+ if(!_drag.date||_drag.intraJour||_drag.date===date) return;
  e.preventDefault();
- const el=document.getElementById('itin-jour-'+jour);
+ const ji=_itinData?.itineraire?.findIndex(j=>j.date===date);
+ const el=ji!=null&&ji>=0?document.getElementById('itin-jour-'+ji):null;
  if(el){el.style.outline='2px solid var(--gd)';el.style.background='#F0F9F4';}
 }
-function itinDragLeave(e,jour){
- const el=document.getElementById('itin-jour-'+jour);
+function itinDragLeave(e,date){
+ const ji=_itinData?.itineraire?.findIndex(j=>j.date===date);
+ const el=ji!=null&&ji>=0?document.getElementById('itin-jour-'+ji):null;
  if(!el||(e.relatedTarget&&el.contains(e.relatedTarget))) return;
  el.style.outline='';el.style.background='';
 }
-function itinDragOver(e,jour){
-
- if(_drag.intraJour||_drag.jour<0||_drag.jour===jour) return;
+function itinDragOver(e,date){
+ if(_drag.intraJour||!_drag.date||_drag.date===date) return;
  e.preventDefault(); e.dataTransfer.dropEffect='move';
 }
-function itinDrop(e,targetJour){
+function itinDrop(e,targetDate){
  e.preventDefault();e.stopPropagation();_stopScroll();
- const el=document.getElementById('itin-jour-'+targetJour);
+ const targetJi=_itinData?.itineraire?.findIndex(j=>j.date===targetDate);
+ const el=targetJi!=null&&targetJi>=0?document.getElementById('itin-jour-'+targetJi):null;
  if(el){el.style.outline='';el.style.background='';}
- if(_drag.intraJour||_drag.jour<0||!_itinData) return;
- const src=_itinData.itineraire[_drag.jour];
- const dst=_itinData.itineraire[targetJour];
- if(!src||!dst||_drag.jour===targetJour) return;
- let pi=_drag.pi;
- const found=src.parcelles.findIndex(p=>p.id===_drag.parcId&&p.nom===_drag.parcNom);
- if(found>=0) pi=found;
- if(pi<0||pi>=src.parcelles.length) return;
+ if(_drag.intraJour||!_drag.date||!_itinData) return;
+ const src=_itinData.itineraire.find(j=>j.date===_drag.date);
+ const dst=_itinData.itineraire.find(j=>j.date===targetDate);
+ if(!src||!dst||_drag.date===targetDate) return;
+ const pi=src.parcelles.findIndex(p=>p.id===_drag.parcId&&p.nom===_drag.parcNom);
+ if(pi<0) return;
  const [parc]=src.parcelles.splice(pi,1);
  dst.parcelles.push(parc);
  // Ne pas se contenter de déposer la parcelle telle quelle dans le jour cible (ce
  // qui pouvait dépasser l'objectif journalier sans redistribuer le surplus) —
- // recalculer depuis le premier des deux jours concernés, en respectant la
+ // recalculer depuis le premier des deux jours concernés (par date, pas par
+ // index — les index peuvent avoir changé depuis le rendu), en respectant la
  // capacité journalière fixe, exactement comme au calcul initial.
- const minJi = Math.min(_drag.jour, targetJour);
+ const srcJi=_itinData.itineraire.findIndex(j=>j.date===_drag.date);
+ const dstJi=_itinData.itineraire.findIndex(j=>j.date===targetDate);
+ const minJi = Math.min(srcJi, dstJi);
  const objectif = parseFloat(document.getElementById('itin-kg')?.value) || _itinData.kg_par_jour || 5000;
  const addD = (base,n)=>{const d=new Date(base+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
  const dateDepart = _itinData.itineraire[minJi]?.date;
@@ -5011,19 +5019,10 @@ function itinDrop(e,targetJour){
  _renderItineraire(_itinData);
 }
 // ── Drag intra-journée (réordonner dans le même jour) ──────────────────────────
-function itinIntraDragStart(e, jour, pi){
- _drag.jour=jour; _drag.pi=pi; _drag.intraJour=true;
- const p=_itinData?.itineraire?.[jour]?.parcelles?.[pi];
- _drag.parcId=p?.id??null; _drag.parcNom=p?.nom??null;
- e.dataTransfer.effectAllowed='move';
- e.dataTransfer.setData('text/plain','intra');
- setTimeout(()=>{ e.target.style.opacity='0.35'; },0);
- e.stopPropagation();
-}
-function itinIntraDragOver(e, jour, pi){
- if(_drag.jour<0) return;
+function itinIntraDragOver(e, date, parcelleId){
+ if(!_drag.date) return;
  // Intra si même jour, inter si jour différent
- const isSameJour=_drag.jour===jour;
+ const isSameJour=_drag.date===date;
  if(!isSameJour){
   // Déléguer au handler inter-jour (highlight du conteneur)
   e.preventDefault();
@@ -5041,31 +5040,32 @@ function itinIntraDragOver(e, jour, pi){
  line.style.cssText='height:3px;background:var(--gd);border-radius:2px;margin:2px 0;pointer-events:none';
  if(insertAfter) card.after(line); else card.before(line);
 }
-function itinIntraDrop(e, jour, pi){
+function itinIntraDrop(e, date, parcelleId){
  e.preventDefault(); e.stopPropagation();
  _stopScroll();
  document.querySelectorAll('.itin-parc-insert').forEach(el=>el.remove());
  // Si même jour → réordonnancer ; si jour différent → déléguer à itinDrop
- if(_drag.jour!==jour){
-  itinDrop(e, jour);
+ if(_drag.date!==date){
+  itinDrop(e, date);
   return;
  }
- if(_drag.jour<0||!_itinData) return;
- const j=_itinData.itineraire[jour];
+ if(!_drag.date||!_itinData) return;
+ const j=_itinData.itineraire.find(x=>x.date===date);
  if(!j) return;
- let fromPi=_drag.pi;
- const found=j.parcelles.findIndex(p=>p.id===_drag.parcId&&p.nom===_drag.parcNom);
- if(found>=0) fromPi=found;
- if(fromPi<0||fromPi>=j.parcelles.length) return;
+ const fromPi=j.parcelles.findIndex(p=>p.id===_drag.parcId&&p.nom===_drag.parcNom);
+ if(fromPi<0) return;
+ const targetPi=j.parcelles.findIndex(p=>p.id===parcelleId);
+ if(targetPi<0) return;
  // Déterminer si on insère avant ou après la cible
  const rect=e.currentTarget.getBoundingClientRect();
  const insertAfter=e.clientY>rect.top+rect.height/2;
- let toPi=insertAfter?pi+1:pi;
+ let toPi=insertAfter?targetPi+1:targetPi;
  if(toPi>fromPi) toPi--; // compenser le splice
  if(fromPi===toPi) return;
  const [parc]=j.parcelles.splice(fromPi,1);
  j.parcelles.splice(Math.max(0,Math.min(toPi,j.parcelles.length)),0,parc);
- _drag.jour=-1;
+ _drag.date=null;
+
  _renderItineraire(_itinData);
 }
 
