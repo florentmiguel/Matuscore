@@ -3823,6 +3823,10 @@ async function calcItineraire(payload){
       // Décret 2024-780 : si dimanche >= J8, passer au lundi et incrémenter jc2
       while((new Date(ds+'T12:00:00')).getDay()===0&&_jourVendange>=7){jc2++;ds=addD2(db,jc2);}// Parcelles disponibles — leur date théorique (maturité, ban des vendanges, ou date impérative choisie) doit être atteinte, sur CHAQUE jour, pas seulement le premier — sinon une date impérative future pouvait être ignorée dès que la récolte était en cours
     let disp=fp2.filter(p=>p.date_theo<=ds);
+    // Une parcelle impérative dont la date est atteinte passe en tête de file dès
+    // aujourd'hui — sinon elle attend son tour derrière tout ce qui est déjà
+    // disponible ce jour-là et se retrouve programmée en retard.
+    disp.sort((a,b)=>(b._imperatif?1:0)-(a._imperatif?1:0));
     if(!disp.length){jc2++;continue;}
     let kgJour2=0;const pj=[];let ii=0;
     // Règle commune : si journée débutée, finir la commune avant de passer à une autre
