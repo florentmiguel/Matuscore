@@ -3821,8 +3821,8 @@ async function calcItineraire(payload){
     let _jourVendange=0; // compteur jours de vendange effectifs (pas calendaire)
     while(fp2.length&&jc2<120){let ds=addD2(db,jc2);
       // Décret 2024-780 : si dimanche >= J8, passer au lundi et incrémenter jc2
-      while((new Date(ds+'T12:00:00')).getDay()===0&&_jourVendange>=7){jc2++;ds=addD2(db,jc2);}const enR=itin2.length>0;// Parcelles disponibles — favoriser la commune en cours
-    let disp=enR?fp2:fp2.filter(p=>p.date_theo<=ds);
+      while((new Date(ds+'T12:00:00')).getDay()===0&&_jourVendange>=7){jc2++;ds=addD2(db,jc2);}// Parcelles disponibles — leur date théorique (maturité, ban des vendanges, ou date impérative choisie) doit être atteinte, sur CHAQUE jour, pas seulement le premier — sinon une date impérative future pouvait être ignorée dès que la récolte était en cours
+    let disp=fp2.filter(p=>p.date_theo<=ds);
     if(!disp.length){jc2++;continue;}
     let kgJour2=0;const pj=[];let ii=0;
     // Règle commune : si journée débutée, finir la commune avant de passer à une autre
@@ -4019,7 +4019,7 @@ function itinDupliquerParcelle(date, parcelleId){
 
  document.getElementById('modalContent').innerHTML=`
   <h3 style="color:var(--gd);margin-bottom:4px">⊕ Parcelle entamée — ${p.nom}</h3>
-  <p style="font-size:11px;color:var(--gr);margin-bottom:10px">${fmtD(jour.date)} · ${p.cepage||''} · ${p.commune||''} · ${surfStr} · Rdt théo. ${rdtStr}</p>
+  <p style="font-size:11px;color:var(--gr);margin-bottom:10px">${fmtD(jour.date)} · ${p.cepage||''} · ${p.commune||''} · Rdt théo. ${rdtStr}</p>
   <label class="field-label">Kg cueillis aujourd'hui sur cette parcelle</label>
   <input type="number" id="dup-kg-saisi" step="10" min="0" placeholder="ex : 2500" style="font-size:18px;font-weight:600;margin-bottom:6px" oninput="_dupCalcReste()">
   <div id="dup-reste-info" style="font-size:11px;color:var(--gr);min-height:18px;margin-bottom:14px"></div>
@@ -4179,7 +4179,7 @@ function itinConfirmAjoutParcelle(ji,p){
 
  document.getElementById('modalContent').innerHTML=`
   <h3 style="color:var(--gd);margin-bottom:4px">➕ Démarrer la parcelle — ${p.nom}</h3>
-  <p style="font-size:11px;color:var(--gr);margin-bottom:10px">${fmtD(jour.date)} · ${p.cepage||''} · ${p.commune||''} · ${surfStr} · Rdt théo. ${rdtStr}</p>
+  <p style="font-size:11px;color:var(--gr);margin-bottom:10px">${fmtD(jour.date)} · ${p.cepage||''} · ${p.commune||''} · Rdt théo. ${rdtStr}</p>
   <label class="field-label">Kg cueillis aujourd'hui sur cette parcelle</label>
   <input type="number" id="dup-kg-saisi" step="10" min="0" placeholder="ex : 3500" style="font-size:18px;font-weight:600;margin-bottom:6px" oninput="_dupCalcReste()">
   <div id="dup-reste-info" style="font-size:11px;color:var(--gr);min-height:18px;margin-bottom:14px"></div>
@@ -4894,7 +4894,7 @@ function _renderItineraire(d){
     const _nomAffiche=p.nom_cuvee?`${p.nom} -- ${p.nom_cuvee}`:p.nom;
     h+=`<div style="font-size:12px"><strong>${_nomAffiche}</strong>${src}${avTag}<span style="color:var(--gr);font-size:11px"> ${p.commune}${deg}${deStr}</span></div>`;
     h+=`<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">`;
-    h+=`<div style="font-size:11px;color:var(--gr);text-align:right">${surf} ${kg}</div>`;
+    h+=`<div style="font-size:11px;color:var(--gr);text-align:right">${kg}</div>`;
     h+=`<button onclick="event.stopPropagation();itinDupliquerParcelle('${j.date}',${p.id})" title="Parcelle entamée — saisir les kg cueillis et fractionner" style="background:var(--gbg);border:.5px solid var(--gl);color:var(--gd);border-radius:6px;padding:2px 7px;font-size:12px;cursor:pointer;flex-shrink:0">⊕</button>`;
     h+=`</div>`;
     h+=`</div>`;
