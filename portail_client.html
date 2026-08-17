@@ -4540,7 +4540,7 @@ function _itinRecalculerDepuis(fromJi, objectif, addD, dateDebutExplicite){
   _jvCount++;
   _itinData.itineraire.push({
    date:dateJour, jour:_itinData.itineraire.length+1,
-   parcelles:jourCourant.map(p=>({...p})),
+   parcelles:jourCourant.map(p=>({...p, degre_estime_recolte:_recalcDegre(p,dateJour), date_theo:dateJour})),
    kg_total:jourCourant.reduce((s,p)=>s+(p.kg||0),0)
   });
   dateJour=_nextDay(dateJour);
@@ -4550,8 +4550,14 @@ function _itinRecalculerDepuis(fromJi, objectif, addD, dateDebutExplicite){
   const t=p.kg_total||p.kg||0; const s=p.surface_ares||0;
   return (s&&t)?Math.round(s*kg/t*100)/100:null;
  };
+ const _recalcDegre=(p,date)=>{
+  if(p.degre==null||!p.date_fiche_dernier) return p.degre_estime_recolte!=null?p.degre_estime_recolte:null;
+  const jours=Math.max(0,(new Date(date+'T12:00:00')-new Date(p.date_fiche_dernier+'T12:00:00'))/86400000);
+  return Math.round((p.degre+(p.dyn_degre||0)*jours)*10)/10;
+ };
 
  file.forEach(p=>{
+
   let kr=Math.round(p.kg||0);
   if(!kr){jourCourant.push({...p,fraction:false});return;}
   let guard=0;
