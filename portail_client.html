@@ -4988,7 +4988,11 @@ function itinDragLeave(e,date){
  el.style.outline='';el.style.background='';
 }
 function itinDragOver(e,date){
- if(_drag.intraJour||!_drag.date||_drag.date===date) return;
+ if(_drag.intraJour||!_drag.date) return;
+ // Autoriser aussi le dépôt dans l'espace vide de SA PROPRE journée (pas
+ // seulement sur une autre journée) — sinon un lâcher qui ne tombe pas pile sur
+ // une autre parcelle est rejeté par le navigateur et revient silencieusement à
+ // sa place, sans aucun retour visible.
  e.preventDefault(); e.dataTransfer.dropEffect='move';
 }
 function itinDrop(e,targetDate){
@@ -4999,25 +5003,46 @@ function itinDrop(e,targetDate){
  if(_drag.intraJour||!_drag.date||!_itinData) return;
  const src=_itinData.itineraire.find(j=>j.date===_drag.date);
  const dst=_itinData.itineraire.find(j=>j.date===targetDate);
- if(!src||!dst||_drag.date===targetDate) return;
+ if(!src||!dst) return;
  const pi=src.parcelles.findIndex(p=>p.id===_drag.parcId&&p.nom===_drag.parcNom);
  if(pi<0) return;
+ if(_drag.date===targetDate){
+  // Dépôt dans un espace vide de SA PROPRE journée (pas précisément sur une
+  // autre parcelle, sinon itinIntraDrop aurait déjà traité le cas et court-
+  // circuité cet appel via stopPropagation) → interprété comme "en dernier".
+  if(pi===src.parcelles.length-1) return; // déjà en dernière position
+  const [parc]=src.parcelles.splice(pi,1);
+  src.parcelles.push(parc);
+  _renderItineraire(_itinData);
+  return;
+ }
  const [parc]=src.parcelles.splice(pi,1);
- dst.parcelles.push(parc);
- // Ne pas se contenter de déposer la parcelle telle quelle dans le jour cible (ce
- // qui pouvait dépasser l'objectif journalier sans redistribuer le surplus) —
- // recalculer depuis le premier des deux jours concernés (par date, pas par
- // index — les index peuvent avoir changé depuis le rendu), en respectant la
- // capacité journalière fixe, exactement comme au calcul initial.
+ // En priorité dans le jour cible (traité en premier lors du recalcul), pour que
+ // la parcelle "réclame" sa capacité sur CE jour avant les autres déjà présentes.
+ dst.parcelles.unshift(parc);
  const srcJi=_itinData.itineraire.findIndex(j=>j.date===_drag.date);
  const dstJi=_itinData.itineraire.findIndex(j=>j.date===targetDate);
- const minJi = Math.min(srcJi, dstJi);
  const objectif = parseFloat(document.getElementById('itin-kg')?.value) || _itinData.kg_par_jour || 5000;
  const addD = (base,n)=>{const d=new Date(base+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
- const dateDepart = _itinData.itineraire[minJi]?.date;
- _itinRecalculerDepuis(minJi, objectif, addD, dateDepart);
+ if(dstJi>srcJi){
+  // Glissé vers un jour PLUS TARD : le jour source garde ses autres parcelles
+  // telles quelles (juste son total recalculé) — seul le jour cible et ce qui
+  // suit sont redistribués. Repartir du jour source ferait revenir la parcelle
+  // en arrière avant même d'atteindre sa destination.
+  src.kg_total = src.parcelles.reduce((s,p)=>s+(p.kg||0),0) || null;
+  _itinRecalculerDepuis(dstJi, objectif, addD, targetDate);
+ } else {
+  // Glissé vers un jour PLUS TÔT (ou égal) : tout doit se réaligner à partir du
+  // jour cible, qui devient le nouveau point de départ du recalcul.
+  _itinRecalculerDepuis(dstJi, objectif, addD, targetDate);
+ }
+ // Un jour vidé de toutes ses parcelles (cas du jour source resté sans rien
+ // dedans) ne doit pas rester affiché comme une carte vide.
+ _itinData.itineraire=_itinData.itineraire.filter(j=>j.parcelles&&j.parcelles.length>0);
+ _itinData.itineraire.forEach((j,i)=>{j.jour=i+1;});
  _renderItineraire(_itinData);
 }
+
 // ── Drag intra-journée (réordonner dans le même jour) ──────────────────────────
 function itinIntraDragOver(e, date, parcelleId){
  if(!_drag.date) return;
