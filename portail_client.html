@@ -329,10 +329,7 @@ textarea{min-height:60px}
     .exploit-section { page-break-inside:avoid; margin-bottom:20px; }
    }
    </style>
-   <div class="no-print" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <button class="btn btn-outline" style="font-size:12px" onclick="exploitExportCSV()">⬇️ Export CSV</button>
-    <button class="btn btn-outline" style="font-size:12px" onclick="window.print()">🖨️ Imprimer / PDF</button>
-   </div>
+   <div id="exploit-synthese-globale" style="margin-bottom:12px"></div>
    <div class="exploit-section">
     <div style="font-size:11px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">📋 Synthèse — dernier relevé par parcelle</div>
     <div id="exploit-synthese"></div>
@@ -345,6 +342,10 @@ textarea{min-height:60px}
    <div class="exploit-section" style="margin-top:12px">
     <div style="font-size:11px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">⚖️ Relevés rendement</div>
     <div id="exploit-fiches"></div>
+   </div>
+   <div class="no-print" style="display:flex;gap:8px;margin-top:16px;margin-bottom:4px;flex-wrap:wrap">
+    <button class="btn btn-outline" style="font-size:12px" onclick="exploitExportCSV()">⬇️ Export CSV</button>
+    <button class="btn btn-outline" style="font-size:12px" onclick="window.print()">🖨️ Imprimer / PDF</button>
    </div>
   </div>
 <div class="section" id="sec-rendement">
@@ -1646,7 +1647,7 @@ function matuOnType(){
  document.getElementById('matu-new-fields').style.display='none';
  matuLockForm();
  if(!val){ box.style.display='none'; return; }
- const m = MATU_PARCELLES.filter(p=>p.nom.toLowerCase().startsWith(val));
+ const m = MATU_PARCELLES.filter(p=>p.nom.toLowerCase().includes(val));
  if(!m.length){ box.style.display='none'; return; }
  box.innerHTML = m.map(p=>
   '<div onclick="matuSelectP('+p.id+')" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:.5px solid #f3f4f6">'+
@@ -2438,7 +2439,7 @@ function rdtOnType(){
  document.getElementById('rdt-form').style.pointerEvents='none';
  document.getElementById('rdt-histo-card').style.display='none';
  if(!val){ box.style.display='none'; return; }
- const m = RDT_PARCELLES.filter(p=>p.nom.toLowerCase().startsWith(val));
+ const m = RDT_PARCELLES.filter(p=>p.nom.toLowerCase().includes(val));
  if(!m.length){ box.style.display='none'; return; }
  box.innerHTML = m.map(p=>
   `<div onclick="rdtSelectP(${p.id})" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:.5px solid #f3f4f6">
@@ -2563,6 +2564,19 @@ async function rdtSave(){
   document.getElementById('rdt-obs').value='';
   document.getElementById('rdt-result').style.display='none';
   rdtLoadHisto(pid, document.getElementById('rdt-inp-parc').value);
+  // Réinitialiser complètement la sélection de parcelle pour permettre d'en saisir
+  // une autre tout de suite, sans avoir à quitter puis revenir sur l'onglet.
+  rdtCurrentPid = null;
+  rdtCurrentPieds = null;
+  document.getElementById('rdt-inp-parc').value = '';
+  document.getElementById('rdt-recap').style.display = 'none';
+  const _piedsInput = document.getElementById('rdt-pieds');
+  if(_piedsInput) _piedsInput.value = '';
+  const _piedsLine = document.getElementById('rdt-pieds-line');
+  if(_piedsLine) _piedsLine.style.display = 'none';
+  document.getElementById('rdt-form').style.opacity = '.3';
+  document.getElementById('rdt-form').style.pointerEvents = 'none';
+  document.getElementById('rdt-inp-parc').focus();
   // Ouvrir et recharger la vue exploitation
   const _exploitCard=document.getElementById('rdt-exploit-card');
   if(_exploitCard){_exploitCard.style.display='block';rdtExploitVisible=true;const _btn=document.querySelector('[onclick="rdtToggleExploit()"]');if(_btn)_btn.textContent='Masquer la vue exploitation';}
@@ -2896,7 +2910,7 @@ function majInfoAppellation(){
   }
 }
 
-TAB_INIT.itineraire = ()=>{
+TAB_INIT.itineraire = async ()=>{
   itinVerifierAcces();
   itinChargerDonnees();
   majInfoAppellation();
@@ -2905,13 +2919,22 @@ TAB_INIT.itineraire = ()=>{
     const _elKg=document.getElementById('itin-kg');
     if(_elKg) _elKg.value=_savedObj;
   }
-  // Restaurer le dernier itinéraire calculé pour ce compte, pour ne pas avoir à
-  // relancer le calcul à chaque réouverture de l'appli.
+  // Restaurer le dernier itinéraire calculé pour ce compte — le serveur est la
+  // source de référence (accessible depuis n'importe quel appareil), la mémoire
+  // locale du navigateur ne sert que de secours rapide si le serveur ne répond pas.
   if(!_itinData){
+    let restaure = false;
     try{
-      const saved = localStorage.getItem('itin_data_'+TOKEN);
-      if(saved) _renderItineraire(JSON.parse(saved));
+      const r = await fetch(`${API_BASE}/itineraire/sauvegarde`);
+      const d = await r.json();
+      if(d && d.data){ _renderItineraire(d.data); restaure = true; }
     }catch(e){}
+    if(!restaure){
+      try{
+        const saved = localStorage.getItem('itin_data_'+TOKEN);
+        if(saved) _renderItineraire(JSON.parse(saved));
+      }catch(e){}
+    }
   }
   if(document.getElementById('itin-ouverture-body').style.display!=='none') itinChargerOuverture();
 };
@@ -2923,6 +2946,11 @@ function itinToggleOuverture(){
   body.style.display=ouvert?'block':'none';
   toggle.textContent=ouvert?'masquer ▴':'afficher ▾';
   if(ouvert) itinChargerOuverture();
+}
+
+function _normaliserCommune(s){
+  if(!s) return '';
+  return s.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[-\s]+/g,' ').trim();
 }
 
 async function itinChargerOuverture(){
@@ -2939,7 +2967,7 @@ async function itinChargerOuverture(){
     }
     const fmtDo=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):null;
     el.innerHTML = dates.map(d=>{
-      const parcellesCombo = (Array.isArray(parcelles)?parcelles:[]).filter(p=>p.commune===d.commune && (d.cepage?p.cepage===d.cepage:true));
+      const parcellesCombo = (Array.isArray(parcelles)?parcelles:[]).filter(p=>_normaliserCommune(p.commune)===_normaliserCommune(d.commune) && (d.cepage?_normaliserCommune(p.cepage)===_normaliserCommune(d.cepage):true));
       const derogRows = d.date_ouverture ? parcellesCombo.map(p=>`
         <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:11px;cursor:pointer">
          <input type="checkbox" ${p.derogation_ouverture?'checked':''} onchange="itinToggleDerogation(${p.id}, this.checked)" style="width:16px;height:16px;flex-shrink:0;margin:0">
@@ -3359,6 +3387,7 @@ function _parcFormHTML(p={}){
     <div><label class="field-label">Entre rangs (m)</label><input type="number" id="pf-er" step="0.05" value="${p.ecart_rangs||''}" placeholder="1.00" oninput="parcCalcDens()"></div>
     <div><label class="field-label">Entre ceps (m)</label><input type="number" id="pf-ec" step="0.05" value="${p.ecart_ceps||''}" placeholder="0.90" oninput="parcCalcDens()"></div>
    </div>
+   <input type="hidden" id="pf-nb-pieds-actuel" value="${p.nb_pieds_ha||''}">
    <div id="pf-dens" style="font-size:11px;color:var(--gd);margin-top:6px;display:none"></div>
   </div>
   <div><label class="field-label">Notes</label><textarea id="pf-notes" style="min-height:50px;margin-bottom:0">${p.notes||''}</textarea></div>`;
@@ -3369,8 +3398,21 @@ function parcCalcDens(){
  const c=parseFloat(document.getElementById('pf-ec')?.value)||0;
  const el=document.getElementById('pf-dens');
  if(!el) return;
- if(r&&c){ el.style.display='block'; el.textContent='→ '+Math.round(10000/(r*c)).toLocaleString('fr-FR')+' pieds/ha'; }
- else el.style.display='none';
+ if(r&&c){
+  el.style.display='block'; el.style.color='var(--gd)';
+  el.textContent='→ '+Math.round(10000/(r*c)).toLocaleString('fr-FR')+' pieds/ha (recalculée depuis les écartements)';
+ } else {
+  // Pas d'écartements saisis : afficher la densité déjà enregistrée pour cette
+  // parcelle (si elle existe) plutôt que de laisser croire qu'elle est perdue —
+  // elle est conservée telle quelle si les écartements restent vides.
+  const actuel = parseFloat(document.getElementById('pf-nb-pieds-actuel')?.value)||0;
+  if(actuel){
+   el.style.display='block'; el.style.color='var(--gr)';
+   el.textContent='Densité actuelle conservée : '+actuel.toLocaleString('fr-FR')+' pieds/ha (renseignez les écartements ci-dessus pour la recalculer)';
+  } else {
+   el.style.display='none';
+  }
+ }
 }
 
 function parcShowCreate(){
@@ -3661,6 +3703,12 @@ async function calcItineraire(payload){
     (ITIN_PARCELLES.length?ITIN_PARCELLES:PARCELLES).forEach(p=>{
       if(p.recolte_complete) _parcFinies.add(p.id);
     });
+    // Détail des parcelles déjà entièrement vendangées — gardé de côté pour rester
+    // affiché après un recalcul (elles sont "figées" : le recalcul ne porte que sur
+    // ce qu'il reste à vendanger, mais on ne les fait pas disparaître de la vue).
+    const _dejaVendangees = (ITIN_PARCELLES.length?ITIN_PARCELLES:PARCELLES)
+      .filter(p=>_parcFinies.has(p.id))
+      .map(p=>({id:p.id, nom:p.nom, cepage:p.cepage, commune:p.commune, kg_recoltes_total:p.kg_recoltes_total||0}));
     // Impératifs : parcelles à date forcée
     const _imperatifs2=JSON.parse(localStorage.getItem('itin_imperatifs')||'{}');
     let file2=(ITIN_PARCELLES.length?ITIN_PARCELLES:PARCELLES).filter(p=>!_parcFinies.has(p.id)).map(p=>{
@@ -3833,7 +3881,8 @@ async function calcItineraire(payload){
     }
     const res2={itineraire:itin2,total_kg:Math.round(kgEx2),solde_a_vendanger:Math.round(soldeServeur),nb_jours:itin2.length,kg_par_jour:Math.round(kgJ2),date_debut:db.toISOString().slice(0,10),nb_parcelles:file2.length,nb_avec_tonnage:file2.filter(p=>p.kg_total).length,sans_tonnage:file2.some(p=>!p.kg_total),rdt_source_summary:[...new Set(file2.map(p=>p.rdt_source))],alertes_degre:al2,alertes_ouverture:aoOuv2,
       volume_autorise_kg:volumeAutorise2, volume_non_recolte_kg:volumeNonRecolte2,
-      rendement_appellation_kgha:_rdtAppel2||null, depassement_bloque_kgha:_bloque2||null, depassement_vo_kgha:_vo2||null};
+      rendement_appellation_kgha:_rdtAppel2||null, depassement_bloque_kgha:_bloque2||null, depassement_vo_kgha:_vo2||null,
+      deja_vendangees:_dejaVendangees};
     _renderItineraire(res2);
     if(res2.alertes_degre&&res2.alertes_degre.length)_showAlerteDegre(res2.alertes_degre);
     return;
@@ -4735,9 +4784,24 @@ async function rdtLoadExploitSilent(){
  await rdtLoadExploit();
 }
 
+let _itinSaveTimer = null;
+function _itinSauvegarderServeur(d){
+ // Différé léger pour éviter de spammer le serveur si plusieurs rendus
+ // s'enchaînent rapidement (ex. pendant un glissé-déposé) — la dernière version
+ // gagne toujours.
+ clearTimeout(_itinSaveTimer);
+ _itinSaveTimer = setTimeout(()=>{
+  fetch(`${API_BASE}/itineraire/sauvegarde`, {
+   method:'POST', headers:{'Content-Type':'application/json'},
+   body: JSON.stringify({campagne:'2026', data:d})
+  }).catch(()=>{});
+ }, 600);
+}
+
 function _renderItineraire(d){
  _itinData=d;
  try{ localStorage.setItem('itin_data_'+TOKEN, JSON.stringify(d)); }catch(e){}
+ _itinSauvegarderServeur(d);
  const fmtD=s=>new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
  const fmtDs=s=>new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
  const CEP_COL={Chardonnay:'#E65100','Pinot Noir':'#7B1FA2',Meunier:'#1565C0'};
@@ -4779,6 +4843,17 @@ function _renderItineraire(d){
  document.getElementById('itin-resume').innerHTML=resume;
 
  let h='';
+ if(d.deja_vendangees && d.deja_vendangees.length){
+  const totalDeja = d.deja_vendangees.reduce((s,p)=>s+(p.kg_recoltes_total||0),0);
+  h += `<div class="card" style="margin-bottom:8px;background:#F0F7F0;border:1px solid var(--gl)">
+   <div style="font-size:11px;font-weight:600;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">✓ Déjà vendangées (${d.deja_vendangees.length} parcelle${d.deja_vendangees.length>1?'s':''} · ${totalDeja.toLocaleString('fr-FR')} kg)</div>
+   ${d.deja_vendangees.map(p=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px">
+     <span><strong>${p.nom}</strong> <span style="color:var(--gr)">· ${p.cepage||''} · ${p.commune||''}</span></span>
+     <span style="color:var(--gd);font-weight:600">${(p.kg_recoltes_total||0).toLocaleString('fr-FR')} kg</span>
+    </div>`).join('')}
+   <div style="font-size:10px;color:var(--gr);margin-top:6px">Exclues du recalcul ci-dessous — pour les modifier, utilise "✏️ Récolte" ou "Réinitialiser".</div>
+  </div>`;
+ }
  (d.itineraire||[]).forEach((j,ji)=>{
   h+=`<div class="card" style="margin-bottom:8px" id="itin-jour-${ji}" data-jour="${ji}" ondragover="itinDragOver(event,${ji})" ondragenter="itinDragEnter(event,${ji})" ondragleave="itinDragLeave(event,${ji})" ondrop="itinDrop(event,${ji})" class="itin-drop-zone">`;
   h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">`;
@@ -4923,12 +4998,16 @@ function itinDrop(e,targetJour){
  if(found>=0) pi=found;
  if(pi<0||pi>=src.parcelles.length) return;
  const [parc]=src.parcelles.splice(pi,1);
- const existing=dst.parcelles.find(p=>p.id===parc.id&&p.nom===parc.nom);
- if(existing){existing.kg=(existing.kg||0)+(parc.kg||0)||null;existing.surface_ares=(existing.surface_ares||0)+(parc.surface_ares||0)||null;existing.fraction=false;}
- else dst.parcelles.push(parc);
- if(!src.parcelles.length) _itinData.itineraire.splice(_drag.jour,1);
- _itinData.itineraire.forEach((j,i)=>{j.jour=i+1;});
- _itinData.itineraire.forEach(j=>{j.kg_total=j.parcelles.reduce((s,p)=>s+(p.kg||0),0)||null;});
+ dst.parcelles.push(parc);
+ // Ne pas se contenter de déposer la parcelle telle quelle dans le jour cible (ce
+ // qui pouvait dépasser l'objectif journalier sans redistribuer le surplus) —
+ // recalculer depuis le premier des deux jours concernés, en respectant la
+ // capacité journalière fixe, exactement comme au calcul initial.
+ const minJi = Math.min(_drag.jour, targetJour);
+ const objectif = parseFloat(document.getElementById('itin-kg')?.value) || _itinData.kg_par_jour || 5000;
+ const addD = (base,n)=>{const d=new Date(base+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+ const dateDepart = _itinData.itineraire[minJi]?.date;
+ _itinRecalculerDepuis(minJi, objectif, addD, dateDepart);
  _renderItineraire(_itinData);
 }
 // ── Drag intra-journée (réordonner dans le même jour) ──────────────────────────
@@ -5173,10 +5252,117 @@ async function exploitationInit(){
   exploitRenderSynthese(d.synthese||[]);
   exploitRenderGraph(d.series||d.parcelles||[]);
   await exploitRenderFiches();
+  exploitRenderSyntheseGlobale(d.synthese||[]);
  }catch(e){
   console.error('[EXPLOIT]',e);
   document.getElementById('exploit-synthese').innerHTML='<p style="color:var(--rd);text-align:center;padding:16px">Erreur de chargement</p>';
  }
+}
+
+async function exploitRenderSyntheseGlobale(synthese){
+ const el = document.getElementById('exploit-synthese-globale');
+ if(!el) return;
+ el.innerHTML = '<div style="color:var(--gr);text-align:center;padding:10px;font-size:12px">Calcul de la synthèse...</div>';
+
+ // Rendement : dernier relevé par parcelle, pondéré par surface (même convention
+ // que l'onglet Rendement > vue exploitation).
+ let rdtRows = [];
+ try{
+  const rr = await fetch(`${API_BASE}/rendements`);
+  if(rr.ok) rdtRows = await rr.json();
+ }catch(e){}
+ const dernierRdtParParcelle = {};
+ rdtRows.forEach(r=>{
+  const prev = dernierRdtParParcelle[r.id_parcelle];
+  if(!prev || (r.id||0) > (prev.id||0)) dernierRdtParParcelle[r.id_parcelle] = r;
+ });
+ const rdtParParcelle = Object.values(dernierRdtParParcelle).filter(r=>r.rendement_kgha && r.surface_cadastrale);
+
+ const moyennePonderee = (rows, champKg, champSurf)=>{
+  const totalSurf = rows.reduce((s,r)=>s+parseFloat(r[champSurf]||0),0);
+  if(!totalSurf) return null;
+  return Math.round(rows.reduce((s,r)=>s+r[champKg]*parseFloat(r[champSurf]||0),0)/totalSurf);
+ };
+ const rdtMoyenExploit = moyennePonderee(rdtParParcelle, 'rendement_kgha', 'surface_cadastrale');
+
+ const rdtParCepage = {};
+ rdtParParcelle.forEach(r=>{ (rdtParCepage[r.cepage||'—']=rdtParCepage[r.cepage||'—']||[]).push(r); });
+ const rdtCepageLignes = Object.entries(rdtParCepage)
+  .map(([cep,rows])=>({cepage:cep, moyenne:moyennePonderee(rows,'rendement_kgha','surface_cadastrale'), n:rows.length}))
+  .sort((a,b)=>(b.moyenne||0)-(a.moyenne||0));
+
+ // Degré : dernier relevé de maturité par parcelle (déjà passé en paramètre) —
+ // moyenne simple, chaque parcelle comptant pour elle-même (pas pondérée par
+ // surface : c'est un indicateur de maturité, pas un volume).
+ const avecDegre = synthese.filter(f=>f.degre_probable!=null);
+ const moyenneSimple = arr => arr.length ? Math.round(arr.reduce((s,v)=>s+v,0)/arr.length*10)/10 : null;
+ const degreMoyenExploit = moyenneSimple(avecDegre.map(f=>f.degre_probable));
+
+ const degreParCepage = {};
+ avecDegre.forEach(f=>{ (degreParCepage[f.cepage||'—']=degreParCepage[f.cepage||'—']||[]).push(f.degre_probable); });
+ const degreCepageLignes = Object.entries(degreParCepage)
+  .map(([cep,vals])=>({cepage:cep, moyenne:moyenneSimple(vals), n:vals.length}))
+  .sort((a,b)=>(b.moyenne||0)-(a.moyenne||0));
+
+ const degreParCepageCommune = {};
+ avecDegre.forEach(f=>{
+  const k = (f.cepage||'—')+' · '+(f.commune||'—');
+  (degreParCepageCommune[k]=degreParCepageCommune[k]||[]).push(f.degre_probable);
+ });
+ const degreCepageCommuneLignes = Object.entries(degreParCepageCommune)
+  .map(([k,vals])=>({label:k, moyenne:moyenneSimple(vals), n:vals.length}))
+  .sort((a,b)=>(b.moyenne||0)-(a.moyenne||0));
+
+ if(!rdtParParcelle.length && !avecDegre.length){
+  el.innerHTML = '';
+  return;
+ }
+
+ let h = `<div class="card" style="background:var(--gbg)">
+  <div style="font-size:11px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">🎯 Synthèse exploitation</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+   <div style="background:#fff;border-radius:8px;padding:10px;text-align:center">
+    <div style="font-size:10px;color:var(--gr)">Rendement moyen estimé</div>
+    <div style="font-size:20px;font-weight:700;color:var(--gd)">${rdtMoyenExploit?rdtMoyenExploit.toLocaleString('fr-FR')+' kg/ha':'—'}</div>
+   </div>
+   <div style="background:#fff;border-radius:8px;padding:10px;text-align:center">
+    <div style="font-size:10px;color:var(--gr)">Degré moyen exploitation</div>
+    <div style="font-size:20px;font-weight:700;color:var(--gd)">${degreMoyenExploit!=null?degreMoyenExploit+'%':'—'}</div>
+   </div>
+  </div>`;
+
+ if(rdtCepageLignes.length){
+  h += `<div style="margin-bottom:10px">
+   <div style="font-size:10px;font-weight:600;color:var(--gr);text-transform:uppercase;margin-bottom:5px">Rendement moyen par cépage</div>
+   ${rdtCepageLignes.map(l=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+     <span>${l.cepage} <span style="color:var(--gr);font-size:10px">(${l.n})</span></span>
+     <span style="font-weight:600">${l.moyenne?l.moyenne.toLocaleString('fr-FR')+' kg/ha':'—'}</span>
+    </div>`).join('')}
+  </div>`;
+ }
+
+ if(degreCepageLignes.length){
+  h += `<div style="margin-bottom:10px">
+   <div style="font-size:10px;font-weight:600;color:var(--gr);text-transform:uppercase;margin-bottom:5px">Degré moyen par cépage</div>
+   ${degreCepageLignes.map(l=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+     <span>${l.cepage} <span style="color:var(--gr);font-size:10px">(${l.n})</span></span>
+     <span style="font-weight:600">${l.moyenne!=null?l.moyenne+'%':'—'}</span>
+    </div>`).join('')}
+  </div>`;
+ }
+
+ if(degreCepageCommuneLignes.length){
+  h += `<div>
+   <div style="font-size:10px;font-weight:600;color:var(--gr);text-transform:uppercase;margin-bottom:5px">Degré moyen par cépage / commune</div>
+   ${degreCepageCommuneLignes.map(l=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+     <span>${l.label} <span style="color:var(--gr);font-size:10px">(${l.n})</span></span>
+     <span style="font-weight:600">${l.moyenne!=null?l.moyenne+'%':'—'}</span>
+    </div>`).join('')}
+  </div>`;
+ }
+
+ h += `</div>`;
+ el.innerHTML = h;
 }
 
 function exploitRenderSynthese(synthese){

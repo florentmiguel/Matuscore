@@ -567,6 +567,15 @@ def init_db():
             UNIQUE(campagne, commune, cepage)
         )
     ''')
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS itineraire_sauvegarde (
+            id_client   TEXT NOT NULL,
+            campagne    TEXT NOT NULL DEFAULT '2026',
+            data_json   TEXT NOT NULL,
+            updated_at  TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (id_client, campagne)
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -2333,6 +2342,18 @@ def portail_liens():
     conn.close()
     return jsonify(clients)
 
+def _normaliser_commune(s):
+    """Normalise un nom de commune pour comparaison : ignore accents, tirets,
+    espaces multiples et casse. 'Mont-Saint-Père' et 'mont saint pere' doivent
+    être reconnus comme la même commune, quelle que soit la façon dont chacun
+    a été saisi (import PDF officiel vs saisie manuelle d'un vigneron)."""
+    import unicodedata
+    if not s: return ''
+    nfkd = unicodedata.normalize('NFKD', s)
+    sans_accents = ''.join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r'[-\s]+', ' ', sans_accents.upper()).strip()
+
+
 def get_client_by_token_or_slug(identifier):
     """Récupère un client par token ou par slug"""
     conn = get_db()
@@ -2352,14 +2373,15 @@ def _parcelles_avec_etat_recolte(id_client):
     (nouvel appareil, autre membre de l'équipe, après fermeture de l'appli...)
     exclue correctement les parcelles déjà vendangées. Inclut aussi la date
     d'ouverture qui s'applique à chaque parcelle (spécifique au cépage si elle
-    existe, sinon celle commune à tous les cépages de la commune)."""
+    existe, sinon celle commune à tous les cépages de la commune).
+
+    La correspondance commune/cépage se fait en Python après normalisation
+    (accents, tirets, casse ignorés) plutôt qu'en égalité SQL stricte — un
+    vigneron qui tape 'Mont Saint Pere' doit retrouver la date enregistrée pour
+    'MONT-SAINT-PERE' importée depuis le PDF officiel."""
     conn = get_db()
     rows = dicts_from_rows(conn.execute("""
-        SELECT p.*, r.recolte_complete, r.kg_recoltes_total,
-            (SELECT d.date_ouverture FROM dates_ouverture d
-             WHERE d.campagne='2026' AND d.commune=p.commune
-               AND (d.cepage=p.cepage OR d.cepage IS NULL)
-             ORDER BY (d.cepage IS NULL) ASC LIMIT 1) AS date_ouverture
+        SELECT p.*, r.recolte_complete, r.kg_recoltes_total
         FROM parcelles p
         LEFT JOIN (
             SELECT id_parcelle, recolte_complete, kg_recoltes_total,
@@ -2368,7 +2390,21 @@ def _parcelles_avec_etat_recolte(id_client):
         ) r ON r.id_parcelle = p.id AND r.rn = 1
         WHERE p.id_client=? ORDER BY p.nom
     """, (id_client,)).fetchall())
+    dates = dicts_from_rows(conn.execute(
+        "SELECT * FROM dates_ouverture WHERE campagne='2026'"
+    ).fetchall())
     conn.close()
+
+    dates_norm = [dict(d, _commune_n=_normaliser_commune(d['commune']),
+                        _cepage_n=_normaliser_commune(d['cepage']) if d['cepage'] else None)
+                  for d in dates]
+    for p in rows:
+        commune_n = _normaliser_commune(p.get('commune'))
+        cepage_n = _normaliser_commune(p.get('cepage')) if p.get('cepage') else None
+        specifique = next((d for d in dates_norm if d['_commune_n'] == commune_n and d['_cepage_n'] == cepage_n), None)
+        generique = next((d for d in dates_norm if d['_commune_n'] == commune_n and d['_cepage_n'] is None), None)
+        match = specifique or generique
+        p['date_ouverture'] = match['date_ouverture'] if match else None
     return rows
 
 
@@ -2396,11 +2432,18 @@ def _ajouter_date_ouverture(d, source='admin'):
     if not commune or not date_ouv:
         return jsonify({"error": "Commune et date d'ouverture requises."}), 400
     conn = get_db()
-    # UNIQUE(campagne,commune,cepage) ne bloque pas les doublons cepage=NULL (règle SQL
-    # standard) — on vérifie donc nous-mêmes avant d'insérer.
-    existing = conn.execute(
-        "SELECT id FROM dates_ouverture WHERE campagne=? AND commune=? AND cepage IS ?",
-        (campagne, commune, cepage)).fetchone()
+    # Recherche par commune/cépage NORMALISÉS (accents, tirets, casse ignorés) pour
+    # ne pas créer un doublon si la commune existe déjà sous une autre forme
+    # d'écriture (ex. 'MONT SAINT PERE' saisi à la main vs 'MONT-SAINT-PERE' importé
+    # du PDF officiel) — on garde alors l'orthographe déjà enregistrée, on ne met à
+    # jour que la date.
+    commune_n = _normaliser_commune(commune)
+    cepage_n = _normaliser_commune(cepage) if cepage else None
+    candidats = conn.execute(
+        "SELECT * FROM dates_ouverture WHERE campagne=?", (campagne,)).fetchall()
+    existing = next((c for c in candidats
+                      if _normaliser_commune(c['commune']) == commune_n
+                      and (_normaliser_commune(c['cepage']) if c['cepage'] else None) == cepage_n), None)
     if existing:
         conn.execute("UPDATE dates_ouverture SET date_ouverture=?, source=? WHERE id=?",
                      (date_ouv, source, existing['id']))
@@ -5616,13 +5659,91 @@ def _reinitialiser_recolte(client):
     """Efface les volumes récoltés saisis (kg_recoltes_total, rendement réel,
     statut 'terminé') pour la campagne en cours — utilisé par le bouton
     'Réinitialiser' de l'itinéraire quand la saisie s'est mal déroulée. Ne touche
-    pas au rendement théorique (rendement_kgha), seulement aux données réelles."""
+    pas au rendement théorique (rendement_kgha), seulement aux données réelles.
+    Efface aussi l'itinéraire sauvegardé, puisqu'il va être recalculé de zéro."""
     j = request.json or {}
     campagne = j.get('campagne', '2026')
     conn = get_db()
     conn.execute("""UPDATE rendements
         SET kg_recoltes_total=0, rendement_reel_kgha=NULL, recolte_complete=0
         WHERE id_client=? AND campagne=?""", (client['id'], campagne))
+    conn.execute("DELETE FROM itineraire_sauvegarde WHERE id_client=? AND campagne=?",
+                 (client['id'], campagne))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ===== Sauvegarde serveur de l'itinéraire (persiste entre appareils) =====
+
+@app.route('/api/portail/<token>/itineraire/sauvegarde', methods=['GET'])
+def portail_itineraire_get_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _itineraire_get(client)
+
+@app.route('/api/portail-s/<slug>/itineraire/sauvegarde', methods=['GET'])
+def portail_itineraire_get_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _itineraire_get(client)
+
+def _itineraire_get(client):
+    campagne = request.args.get('campagne', '2026')
+    conn = get_db()
+    row = conn.execute(
+        "SELECT data_json, updated_at FROM itineraire_sauvegarde WHERE id_client=? AND campagne=?",
+        (client['id'], campagne)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"data": None})
+    return jsonify({"data": json.loads(row['data_json']), "updated_at": row['updated_at']})
+
+
+@app.route('/api/portail/<token>/itineraire/sauvegarde', methods=['POST'])
+def portail_itineraire_save_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _itineraire_save(client)
+
+@app.route('/api/portail-s/<slug>/itineraire/sauvegarde', methods=['POST'])
+def portail_itineraire_save_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _itineraire_save(client)
+
+def _itineraire_save(client):
+    j = request.json or {}
+    campagne = j.get('campagne', '2026')
+    data = j.get('data')
+    if data is None:
+        return jsonify({"error": "data manquant"}), 400
+    conn = get_db()
+    conn.execute("""INSERT INTO itineraire_sauvegarde (id_client, campagne, data_json, updated_at)
+        VALUES (?,?,?, datetime('now'))
+        ON CONFLICT(id_client, campagne) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at""",
+        (client['id'], campagne, json.dumps(data)))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route('/api/portail/<token>/itineraire/sauvegarde', methods=['DELETE'])
+def portail_itineraire_delete_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _itineraire_delete(client)
+
+@app.route('/api/portail-s/<slug>/itineraire/sauvegarde', methods=['DELETE'])
+def portail_itineraire_delete_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _itineraire_delete(client)
+
+def _itineraire_delete(client):
+    campagne = request.args.get('campagne', '2026')
+    conn = get_db()
+    conn.execute("DELETE FROM itineraire_sauvegarde WHERE id_client=? AND campagne=?", (client['id'], campagne))
     conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
@@ -5645,7 +5766,8 @@ def portail_dates_ouverture_slug(slug):
 def _dates_ouverture_exploitation(client):
     """Les couples commune/cépage réellement présents dans les parcelles de ce
     compte, avec la date d'ouverture connue (si renseignée) — pour n'afficher que
-    ce qui concerne cette exploitation, pas tout le référentiel Champagne."""
+    ce qui concerne cette exploitation, pas tout le référentiel Champagne.
+    Correspondance normalisée (accents/tirets/casse ignorés), pas égalité stricte."""
     conn = get_db()
     combos = dicts_from_rows(conn.execute("""
         SELECT DISTINCT commune, cepage FROM parcelles
@@ -5656,10 +5778,16 @@ def _dates_ouverture_exploitation(client):
     ).fetchall())
     conn.close()
 
+    dates_norm = [dict(d, _commune_n=_normaliser_commune(d['commune']),
+                        _cepage_n=_normaliser_commune(d['cepage']) if d['cepage'] else None)
+                  for d in dates]
+
     def date_pour(commune, cepage):
-        specifique = next((d for d in dates if d['commune'] == commune and d['cepage'] == cepage), None)
+        commune_n = _normaliser_commune(commune)
+        cepage_n = _normaliser_commune(cepage) if cepage else None
+        specifique = next((d for d in dates_norm if d['_commune_n'] == commune_n and d['_cepage_n'] == cepage_n), None)
         if specifique: return specifique
-        return next((d for d in dates if d['commune'] == commune and d['cepage'] is None), None)
+        return next((d for d in dates_norm if d['_commune_n'] == commune_n and d['_cepage_n'] is None), None)
 
     resultat = []
     for c in combos:
