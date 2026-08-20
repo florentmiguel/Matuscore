@@ -3242,6 +3242,12 @@ function carnetRender(){
   carnetRenderFusionBar();
 }
 
+function _carnetFmtDateCourt(dateStr){
+  try{
+    return new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
+  }catch(e){ return dateStr; }
+}
+
 function carnetLigneHtml(entryId, idsParcelles, entry, dateParDefaut){
   entry = entry || {};
   const date = entry.date || dateParDefaut || document.getElementById('carnet-date').value;
@@ -3252,17 +3258,37 @@ function carnetLigneHtml(entryId, idsParcelles, entry, dateParDefaut){
   const idsStr = idsParcelles.join(',');
   const idAttr = entryId ? `data-carnet-ligne="${entryId}"` : `data-carnet-ligne-nouvelle="${idsStr}"`;
   const eid = entryId || 'null';
-  return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:4px 0;${entryId?'border-bottom:1px solid #f5f5f5':'border-top:1px dashed #ddd;margin-top:4px;padding-top:8px'}" ${idAttr}>
-    <input type="date" value="${date}" onchange="carnetLigneChamp(${eid},[${idsStr}],'date',this.value)" style="width:118px;border:1px solid #ddd;border-radius:6px;padding:4px 5px;font-size:11px">
-    <div style="display:flex;align-items:center;gap:3px">
-      <button onclick="carnetLignePas(${eid},[${idsStr}],-1)" style="width:22px;height:22px;border-radius:5px;border:1px solid #ddd;background:var(--gbg);font-weight:700;cursor:pointer;font-size:12px">−</button>
-      <input type="number" inputmode="numeric" min="0" step="1" value="${caisses}" placeholder="cs" onchange="carnetLigneChamp(${eid},[${idsStr}],'caisses',this.value)" style="width:38px;text-align:center;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:11.5px">
-      <button onclick="carnetLignePas(${eid},[${idsStr}],1)" style="width:22px;height:22px;border-radius:5px;border:1px solid #ddd;background:var(--gbg);font-weight:700;cursor:pointer;font-size:12px">+</button>
+  // Une ligne d'HISTORIQUE garde sa propre date modifiable (pour corriger un jour
+  // précis) ; une NOUVELLE ligne suit simplement la date choisie en haut de l'écran
+  // — plus besoin de viser un minuscule champ date pour saisir une journée passée,
+  // il suffit de changer la date tout en haut avant d'ajouter la saisie.
+  const dateZone = entryId
+    ? `<input type="date" value="${date}" onchange="carnetLigneChamp(${eid},[${idsStr}],'date',this.value)" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px;box-sizing:border-box;margin-bottom:8px">`
+    : '';
+  return `<div style="background:${entryId?'#fff':'#FBFAF6'};border:1px solid ${entryId?'#eee':'#ddd'};${entryId?'':'border-style:dashed;'}border-radius:10px;padding:10px;margin-bottom:8px" ${idAttr}>
+    ${dateZone}
+    <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:end">
+      <div>
+        <label style="font-size:10px;color:var(--gr);display:block;margin-bottom:3px">Caisses</label>
+        <div style="display:flex;align-items:center;gap:4px">
+          <button onclick="carnetLignePas(${eid},[${idsStr}],-1)" style="width:36px;height:36px;border-radius:8px;border:1px solid #ddd;background:var(--gbg);font-weight:700;cursor:pointer;font-size:17px;flex-shrink:0">−</button>
+          <input type="number" inputmode="numeric" min="0" step="1" value="${caisses}" onchange="carnetLigneChamp(${eid},[${idsStr}],'caisses',this.value)" style="width:46px;text-align:center;border:1px solid #ddd;border-radius:8px;padding:9px 2px;font-size:15px">
+          <button onclick="carnetLignePas(${eid},[${idsStr}],1)" style="width:36px;height:36px;border-radius:8px;border:1px solid #ddd;background:var(--gbg);font-weight:700;cursor:pointer;font-size:17px;flex-shrink:0">+</button>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--gr);display:block;margin-bottom:3px">Poids total (kg)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.5" value="${poidsTotal}" placeholder="kg" onchange="carnetLigneChamp(${eid},[${idsStr}],'poids_total',this.value)" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:9px;font-size:15px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--gr);display:block;margin-bottom:3px">Poids cs (kg)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.1" value="${poidsMoyen}" placeholder="kg" onchange="carnetLigneChamp(${eid},[${idsStr}],'poids_moyen',this.value)" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:9px;font-size:15px;box-sizing:border-box">
+      </div>
     </div>
-    <input type="number" inputmode="decimal" min="0" step="0.5" value="${poidsTotal}" placeholder="kg total" onchange="carnetLigneChamp(${eid},[${idsStr}],'poids_total',this.value)" style="width:62px;border:1px solid #ddd;border-radius:6px;padding:4px 5px;font-size:11.5px">
-    <input type="number" inputmode="decimal" min="0" step="0.1" value="${poidsMoyen}" placeholder="kg/cs" onchange="carnetLigneChamp(${eid},[${idsStr}],'poids_moyen',this.value)" style="width:54px;border:1px solid #ddd;border-radius:6px;padding:4px 5px;font-size:11.5px">
-    <input type="text" value="${note.replace(/"/g,'&quot;')}" placeholder="remarque" onchange="carnetLigneChamp(${eid},[${idsStr}],'note',this.value)" style="flex:1;min-width:70px;border:1px solid #eee;border-radius:6px;padding:4px 6px;font-size:11px;background:#FBFAF6">
-    ${entryId ? `<button onclick="carnetLigneSupprimer(${entryId},[${idsStr}])" style="width:22px;height:22px;border-radius:5px;border:1px solid #eee;background:#fff;color:var(--rd);flex-shrink:0;cursor:pointer;font-size:11px">✕</button>` : `<span style="font-size:9.5px;color:var(--gr);flex-shrink:0;white-space:nowrap">+ nouvelle livraison</span>`}
+    <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+      <input type="text" value="${note.replace(/"/g,'&quot;')}" placeholder="Remarque (facultatif)" onchange="carnetLigneChamp(${eid},[${idsStr}],'note',this.value)" style="flex:1;border:1px solid #eee;border-radius:8px;padding:8px 10px;font-size:13px;background:#FBFAF6;box-sizing:border-box">
+      ${entryId ? `<button onclick="carnetLigneSupprimer(${entryId},[${idsStr}])" style="width:36px;height:36px;border-radius:8px;border:1px solid #eee;background:#fff;color:var(--rd);flex-shrink:0;cursor:pointer;font-size:15px">✕</button>` : ''}
+    </div>
   </div>`;
 }
 
@@ -3341,7 +3367,7 @@ async function carnetLigneChamp(entryId, idsParcelles, champ, valeur){
     const zone = document.querySelector(`[data-carnet-ligne-nouvelle="${cle}"]`);
     const nums = zone ? zone.querySelectorAll('input[type=number]') : [];
     actuel = {
-      date: (zone && zone.querySelector('input[type=date]')?.value) || document.getElementById('carnet-date').value,
+      date: document.getElementById('carnet-date').value, // une nouvelle ligne suit toujours la date choisie en haut de l'écran
       caisses: nums[0] ? (parseFloat(nums[0].value)||null) : null,
       poids_total: nums[1] ? (parseFloat(nums[1].value)||null) : null,
       poids_moyen: nums[2] ? (parseFloat(nums[2].value)||null) : null,
@@ -3364,6 +3390,15 @@ async function carnetLigneChamp(entryId, idsParcelles, champ, valeur){
 
   const idKey = entryId || ('new_'+idsParcelles.join('_'));
   clearTimeout(_carnetSaveTimers[idKey]);
+
+  // Pour une NOUVELLE ligne (pas encore enregistrée), on n'insère la ligne suivante
+  // qu'une fois le nombre de caisses ET un poids (total ou moyen) renseignés — sinon
+  // la ligne se recrée dès la première frappe et fait perdre le focus de saisie.
+  // Les corrections d'une ligne déjà existante ne sont pas concernées.
+  if(!entryId && !(actuel.caisses && (actuel.poids_total || actuel.poids_moyen))){
+    return;
+  }
+
   _carnetSaveTimers[idKey] = setTimeout(async ()=>{
     try{
       const body = {date: actuel.date, id_parcelles: idsParcelles, caisses:actuel.caisses, poids_total:actuel.poids_total, poids_moyen:actuel.poids_moyen, note:actuel.note};
@@ -3538,27 +3573,29 @@ async function _carnetSyncItineraire(idsParcelles, date){
 
 function carnetRenderSynthese(){
   const el = document.getElementById('carnet-synthese');
-  let totCaisses=0, totKg=0, totSurfPesee=0, totKgPese=0;
-  const parcellesRenseignees = new Set();
-  CARNET_ENTREES.forEach(e=>{
-    totCaisses += e.caisses || 0;
-    totKg += e.poids_total || 0;
-    if(e.poids_total){
-      e.parcelles.forEach(id=>{
-        parcellesRenseignees.add(id);
-        const p = CARNET_PARCELLES.find(x=>x.id===id);
-        if(p && p.surface_cadastrale) totSurfPesee += p.surface_cadastrale*100/e.parcelles.length;
-      });
-      totKgPese += e.poids_total;
+  let totCaisses = 0;
+  CARNET_ENTREES.forEach(e=>{ totCaisses += e.caisses || 0; });
+
+  // Le poids total et la surface récoltée se basent sur le total par parcelle
+  // (kg_recoltes_total), pas uniquement sur les saisies du carnet — ça inclut aussi
+  // les volumes saisis via l'ancien système (itinéraire) pour les clients qui
+  // l'avaient utilisé avant l'arrivée du carnet, sinon leurs données disparaissaient
+  // de cette synthèse alors qu'elles restent bien dans le tableau rendement.
+  let totKg = 0, totSurfRecolteeAres = 0;
+  CARNET_PARCELLES.forEach(p=>{
+    if(p.kg_recoltes_total){
+      totKg += p.kg_recoltes_total;
+      if(p.surface_cadastrale) totSurfRecolteeAres += p.surface_cadastrale*100;
     }
   });
-  const rendement = totSurfPesee>0 ? Math.round(totKgPese*100/totSurfPesee) : null;
+  const rendement = totSurfRecolteeAres>0 ? Math.round(totKg*100/totSurfRecolteeAres) : null;
+
   el.innerHTML = `
    <div style="font-size:11px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">📔 Carnet de vendange — Campagne 2026</div>
    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
     <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Caisses saisies</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${totCaisses.toLocaleString('fr-FR')}</div></div>
-    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Poids total</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${totKg.toLocaleString('fr-FR')} kg</div></div>
-    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Parcelles pesées</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${parcellesRenseignees.size}/${CARNET_PARCELLES.length}</div></div>
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Poids total</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${Math.round(totKg).toLocaleString('fr-FR')} kg</div></div>
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Surface récoltée</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${(Math.round(totSurfRecolteeAres*100)/100).toLocaleString('fr-FR')} a</div></div>
     <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Rendement exploitation</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${rendement!=null?rendement.toLocaleString('fr-FR')+' kg/ha':'—'}</div></div>
    </div>`;
 }
