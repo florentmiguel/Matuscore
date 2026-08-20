@@ -114,6 +114,7 @@ _FONCTIONS_ACCES_COMPLET = (
     '/itineraire', '/itineraire/date-optimale', '/itineraire/export-pdf',
     '/rendements/export-csv', '/rendements/export-pdf',
     '/exploitation/export-csv', '/exploitation/export-pdf',
+    '/carnet-vendange/export-pdf', '/carnet-vendange/export-pdf-total',
 )
 
 @app.before_request
@@ -575,6 +576,25 @@ def init_db():
             updated_at  TEXT DEFAULT (datetime('now')),
             PRIMARY KEY (id_client, campagne)
         )
+    ''')
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS carnet_vendange (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_client    TEXT NOT NULL,
+            campagne     TEXT NOT NULL DEFAULT '2026',
+            date         TEXT NOT NULL,
+            caisses      REAL,
+            poids_total  REAL,
+            poids_moyen  REAL,
+            note         TEXT,
+            created_at   TEXT DEFAULT (datetime('now')),
+            updated_at   TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS carnet_vendange_parcelles (
+            id_carnet    INTEGER NOT NULL,
+            id_parcelle  INTEGER NOT NULL,
+            PRIMARY KEY (id_carnet, id_parcelle)
+        );
     ''')
     conn.commit()
     conn.close()
@@ -5711,6 +5731,385 @@ def _reinitialiser_recolte(client):
     conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
+
+
+# ===== Carnet de vendange (caisses/poids par parcelle, jour par jour) =========
+
+@app.route('/api/portail/<token>/carnet-vendange', methods=['GET'])
+def portail_carnet_get_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _carnet_get(client)
+
+@app.route('/api/portail-s/<slug>/carnet-vendange', methods=['GET'])
+def portail_carnet_get_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _carnet_get(client)
+
+def _carnet_get(client):
+    campagne = request.args.get('campagne', '2026')
+    conn = get_db()
+    parcelles = dicts_from_rows(conn.execute("""
+        SELECT p.id, p.nom, p.lieu_dit, p.cepage, p.commune, p.surface_cadastrale,
+            (SELECT r.recolte_complete FROM rendements r WHERE r.id_parcelle=p.id AND r.campagne=? ORDER BY r.id DESC LIMIT 1) AS recolte_complete,
+            (SELECT r.kg_recoltes_total FROM rendements r WHERE r.id_parcelle=p.id AND r.campagne=? ORDER BY r.id DESC LIMIT 1) AS kg_recoltes_total
+        FROM parcelles p WHERE p.id_client=? ORDER BY p.commune, p.nom
+    """, (campagne, campagne, client['id'])).fetchall())
+    entrees = dicts_from_rows(conn.execute(
+        "SELECT * FROM carnet_vendange WHERE id_client=? AND campagne=? ORDER BY date, id",
+        (client['id'], campagne)).fetchall())
+    for e in entrees:
+        e['parcelles'] = [r['id_parcelle'] for r in conn.execute(
+            "SELECT id_parcelle FROM carnet_vendange_parcelles WHERE id_carnet=?", (e['id'],)).fetchall()]
+    conn.close()
+    return jsonify({"parcelles": parcelles, "entrees": entrees})
+
+
+def _carnet_recalculer_rendements(client, id_parcelles, conn):
+    """Le carnet de vendange est désormais la SEULE source des volumes récoltés — le
+    tableau rendement (kg_recoltes_total, rendement_reel_kgha) se recalcule à partir
+    de TOUTES les saisies du carnet pour chaque parcelle concernée, tous jours
+    confondus. Une entrée fusionnée répartit son poids au prorata de la surface des
+    parcelles membres. Ne touche jamais à recolte_complete (géré séparément par la
+    case à cocher 'Parcelle terminée')."""
+    if not id_parcelles: return
+    campagne = '2026'
+    toutes_parc = {p['id']: p for p in dicts_from_rows(conn.execute(
+        "SELECT id, surface_cadastrale FROM parcelles WHERE id_client=?", (client['id'],)).fetchall())}
+    entrees = dicts_from_rows(conn.execute(
+        "SELECT * FROM carnet_vendange WHERE id_client=? AND campagne=?", (client['id'], campagne)).fetchall())
+
+    totaux = {pid: 0.0 for pid in id_parcelles}
+    for e in entrees:
+        if not e.get('poids_total'): continue
+        membres = [r['id_parcelle'] for r in conn.execute(
+            "SELECT id_parcelle FROM carnet_vendange_parcelles WHERE id_carnet=?", (e['id'],)).fetchall()]
+        concernes = [m for m in membres if m in totaux]
+        if not concernes: continue
+        if len(membres) == 1:
+            totaux[membres[0]] += e['poids_total']
+        else:
+            surf_totale = sum((toutes_parc.get(m, {}).get('surface_cadastrale') or 0) for m in membres)
+            for m in concernes:
+                part = (toutes_parc.get(m, {}).get('surface_cadastrale') or 0) / surf_totale if surf_totale else 1/len(membres)
+                totaux[m] += e['poids_total'] * part
+
+    for pid, kg in totaux.items():
+        surf_ha = toutes_parc.get(pid, {}).get('surface_cadastrale')
+        rdt = round(kg / surf_ha) if surf_ha and kg else None
+        existing = conn.execute(
+            "SELECT id FROM rendements WHERE id_parcelle=? AND id_client=? AND campagne=? ORDER BY id DESC LIMIT 1",
+            (pid, client['id'], campagne)).fetchone()
+        if existing:
+            conn.execute("UPDATE rendements SET kg_recoltes_total=?, rendement_reel_kgha=? WHERE id=?",
+                         (round(kg, 1) if kg else 0, rdt, existing['id']))
+        elif kg:
+            conn.execute("""INSERT INTO rendements (id_parcelle, id_client, campagne, date_releve,
+                nb_grappes_pied, poids_moyen_g, kg_recoltes_total, rendement_reel_kgha, recolte_complete)
+                VALUES (?,?,?,date('now'),0,0,?,?,0)""",
+                (pid, client['id'], campagne, round(kg, 1), rdt))
+
+
+@app.route('/api/portail/<token>/carnet-vendange', methods=['POST'])
+def portail_carnet_save_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _carnet_save(client)
+
+@app.route('/api/portail-s/<slug>/carnet-vendange', methods=['POST'])
+def portail_carnet_save_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _carnet_save(client)
+
+def _carnet_save(client):
+    """Enregistre une saisie du carnet. Deux cas, distingués par la présence d'un
+    'id' explicite dans la requête :
+    - Avec 'id' : correction d'une ligne EXISTANTE (l'utilisateur s'est trompé et
+      modifie sa saisie) — mise à jour de cette ligne précise, jamais de doublon.
+    - Sans 'id' : NOUVELLE livraison — insère toujours une nouvelle ligne, même si
+      une saisie existe déjà pour la même parcelle le même jour (plusieurs
+      livraisons par jour, ou sur plusieurs jours, doivent toutes être conservées
+      sans écraser les précédentes tant que la parcelle n'est pas 'terminée')."""
+    d = request.json or {}
+    campagne = d.get('campagne') or '2026'
+    date_j = d.get('date')
+    ids_parcelles = sorted(set(int(x) for x in (d.get('id_parcelles') or [])))
+    entry_id = d.get('id')
+    if not date_j or not ids_parcelles:
+        return jsonify({"error": "date et id_parcelles requis"}), 400
+    caisses = d.get('caisses')
+    poids_total = d.get('poids_total')
+    poids_moyen = d.get('poids_moyen')
+    note = d.get('note')
+    vide = not caisses and not poids_total and not poids_moyen and not note
+
+    conn = get_db()
+
+    if entry_id:
+        row = conn.execute("SELECT id FROM carnet_vendange WHERE id=? AND id_client=?",
+                            (entry_id, client['id'])).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Entrée introuvable"}), 404
+        if vide:
+            conn.execute("DELETE FROM carnet_vendange_parcelles WHERE id_carnet=?", (entry_id,))
+            conn.execute("DELETE FROM carnet_vendange WHERE id=?", (entry_id,))
+            _carnet_recalculer_rendements(client, ids_parcelles, conn)
+            conn.commit(); conn.close()
+            return jsonify({"status": "ok", "id": None, "deleted": True})
+        conn.execute("""UPDATE carnet_vendange SET date=?, caisses=?, poids_total=?, poids_moyen=?, note=?,
+            updated_at=datetime('now') WHERE id=?""",
+            (date_j, caisses, poids_total, poids_moyen, note, entry_id))
+        _carnet_recalculer_rendements(client, ids_parcelles, conn)
+        conn.commit(); conn.close()
+        return jsonify({"status": "ok", "id": entry_id})
+
+    if vide:
+        conn.close()
+        return jsonify({"status": "ok", "id": None})
+
+    cur = conn.execute("""INSERT INTO carnet_vendange (id_client, campagne, date, caisses, poids_total, poids_moyen, note)
+        VALUES (?,?,?,?,?,?,?)""", (client['id'], campagne, date_j, caisses, poids_total, poids_moyen, note))
+    cid = cur.lastrowid
+    for pid in ids_parcelles:
+        conn.execute("INSERT INTO carnet_vendange_parcelles (id_carnet, id_parcelle) VALUES (?,?)", (cid, pid))
+    _carnet_recalculer_rendements(client, ids_parcelles, conn)
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok", "id": cid})
+
+
+def portail_carnet_delete_token(token, cid):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _carnet_delete(client, cid)
+
+@app.route('/api/portail-s/<slug>/carnet-vendange/<int:cid>', methods=['DELETE'])
+def portail_carnet_delete_slug(slug, cid):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _carnet_delete(client, cid)
+
+def _carnet_delete(client, cid):
+    conn = get_db()
+    row = conn.execute("SELECT id FROM carnet_vendange WHERE id=? AND id_client=?", (cid, client['id'])).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Entrée introuvable"}), 404
+    ids_parcelles = [r['id_parcelle'] for r in conn.execute(
+        "SELECT id_parcelle FROM carnet_vendange_parcelles WHERE id_carnet=?", (cid,)).fetchall()]
+    conn.execute("DELETE FROM carnet_vendange_parcelles WHERE id_carnet=?", (cid,))
+    conn.execute("DELETE FROM carnet_vendange WHERE id=?", (cid,))
+    _carnet_recalculer_rendements(client, ids_parcelles, conn)
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route('/api/portail/<token>/carnet-vendange/parcelle-terminee', methods=['POST'])
+def portail_carnet_terminee_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _carnet_marquer_terminee(client)
+
+@app.route('/api/portail-s/<slug>/carnet-vendange/parcelle-terminee', methods=['POST'])
+def portail_carnet_terminee_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _carnet_marquer_terminee(client)
+
+def _carnet_marquer_terminee(client):
+    """Bascule manuellement le statut 'terminée' d'une ou plusieurs parcelles (une
+    fusion marque tous ses membres à la fois) — c'est ce statut, pas un calcul
+    automatique, qui exclut une parcelle du recalcul de l'itinéraire."""
+    d = request.json or {}
+    ids_parcelles = [int(x) for x in (d.get('id_parcelles') or [])]
+    terminee = bool(d.get('terminee'))
+    campagne = d.get('campagne') or '2026'
+    if not ids_parcelles:
+        return jsonify({"error": "id_parcelles requis"}), 400
+    conn = get_db()
+    for pid in ids_parcelles:
+        existing = conn.execute(
+            "SELECT id FROM rendements WHERE id_parcelle=? AND id_client=? AND campagne=? ORDER BY id DESC LIMIT 1",
+            (pid, client['id'], campagne)).fetchone()
+        if existing:
+            conn.execute("UPDATE rendements SET recolte_complete=? WHERE id=?", (1 if terminee else 0, existing['id']))
+        else:
+            conn.execute("""INSERT INTO rendements (id_parcelle, id_client, campagne, date_releve,
+                nb_grappes_pied, poids_moyen_g, recolte_complete) VALUES (?,?,?,date('now'),0,0,?)""",
+                (pid, client['id'], campagne, 1 if terminee else 0))
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+
+def _carnet_donnees_export(client, campagne='2026', date_filtre=None):
+    """Rassemble les entrées du carnet (avec leurs parcelles, communes, cépages,
+    surfaces) pour construire un export — journalier si date_filtre est fourni,
+    sinon toute la campagne. Calcule le rendement par entrée (poids total / surface
+    des parcelles concernées) et le rendement d'exploitation global (uniquement sur
+    ce qui a réellement été pesé), comme dans l'onglet Rendement."""
+    conn = get_db()
+    sql = "SELECT * FROM carnet_vendange WHERE id_client=? AND campagne=?"
+    params = [client['id'], campagne]
+    if date_filtre:
+        sql += " AND date=?"; params.append(date_filtre)
+    sql += " ORDER BY date, id"
+    entrees = dicts_from_rows(conn.execute(sql, params).fetchall())
+
+    toutes_parcelles = dicts_from_rows(conn.execute(
+        "SELECT id, nom, lieu_dit, cepage, commune, surface_cadastrale FROM parcelles WHERE id_client=?",
+        (client['id'],)).fetchall())
+    parc_par_id = {p['id']: p for p in toutes_parcelles}
+
+    lignes = []
+    kg_pese_total, surf_pesee_total = 0.0, 0.0
+    caisses_total, kg_total = 0.0, 0.0
+    ids_parcelles_renseignees = set()
+    for e in entrees:
+        ids = [r['id_parcelle'] for r in conn.execute(
+            "SELECT id_parcelle FROM carnet_vendange_parcelles WHERE id_carnet=?", (e['id'],)).fetchall()]
+        parcs = [parc_par_id[i] for i in ids if i in parc_par_id]
+        if not parcs: continue
+        surf_ares = sum((p.get('surface_cadastrale') or 0) * 100 for p in parcs)
+        noms = " + ".join(p['nom'] for p in parcs)
+        communes = ", ".join(sorted(set(p.get('commune') or '' for p in parcs)))
+        cepages = ", ".join(sorted(set(p.get('cepage') or '' for p in parcs)))
+        rendement = round(e['poids_total'] * 100 / surf_ares) if e.get('poids_total') and surf_ares else None
+        lignes.append({
+            "date": e['date'], "nom": noms, "commune": communes, "cepage": cepages,
+            "surface_ares": round(surf_ares, 2), "caisses": e.get('caisses'),
+            "poids_total": e.get('poids_total'), "poids_moyen": e.get('poids_moyen'),
+            "rendement": rendement, "note": e.get('note'),
+        })
+        if e.get('poids_total'):
+            kg_pese_total += e['poids_total']; surf_pesee_total += surf_ares
+            ids_parcelles_renseignees.update(ids)
+        caisses_total += e.get('caisses') or 0
+        kg_total += e.get('poids_total') or 0
+
+    conn.close()
+    rendement_exploitation = round(kg_pese_total * 100 / surf_pesee_total) if surf_pesee_total else None
+    return {
+        "lignes": lignes, "caisses_total": caisses_total, "kg_total": kg_total,
+        "rendement_exploitation": rendement_exploitation,
+        "nb_parcelles_renseignees": len(ids_parcelles_renseignees), "nb_parcelles_total": len(toutes_parcelles),
+        "surface_recoltee_ares": round(surf_pesee_total, 2),
+    }
+
+
+def _html_pdf_carnet(client, donnees, titre, sous_titre):
+    from datetime import date as _date
+    d = donnees
+    rows_html = ""
+    commune_actuelle = None
+    for l in sorted(d['lignes'], key=lambda x: (x['commune'], x['date'], x['nom'])):
+        if l['commune'] != commune_actuelle:
+            rows_html += f'<tr><td colspan="8" style="background:#EAF3DE;font-weight:700;color:#2D6A4F;padding:6px 8px">{l["commune"] or "—"}</td></tr>'
+            commune_actuelle = l['commune']
+        rows_html += f"""<tr>
+            <td>{l['date']}</td>
+            <td><strong>{l['nom']}</strong></td>
+            <td style="font-size:10px;color:#666">{l['cepage'] or '—'}</td>
+            <td>{l['surface_ares']} a</td>
+            <td>{(f"{l['caisses']:g}" if l['caisses'] is not None else '—')}</td>
+            <td>{l['poids_total']:.0f} kg</td>
+            <td>{l['poids_moyen']:.1f} kg/caisse</td>
+            <td>{l['rendement'] if l['rendement'] is not None else '—'} kg/ha</td>
+        </tr>""" if l.get('poids_total') and l.get('poids_moyen') else f"""<tr>
+            <td>{l['date']}</td>
+            <td><strong>{l['nom']}</strong></td>
+            <td style="font-size:10px;color:#666">{l['cepage'] or '—'}</td>
+            <td>{l['surface_ares']} a</td>
+            <td>{(f"{l['caisses']:g}" if l['caisses'] is not None else '—')}</td>
+            <td colspan="3" style="color:#999">Pas encore pesée</td>
+        </tr>"""
+        if l.get('note'):
+            rows_html += f'<tr><td></td><td colspan="7" style="font-size:10px;color:#666;font-style:italic;padding-top:0">Remarque : {l["note"]}</td></tr>'
+
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  body{{font-family:Arial,sans-serif;font-size:11.5px;margin:20px;color:#1a1a1a}}
+  h1{{color:#2D6A4F;font-size:18px;margin-bottom:4px}}
+  .sub{{color:#666;font-size:11px;margin-bottom:16px}}
+  table{{width:100%;border-collapse:collapse;margin-bottom:16px}}
+  th{{background:#2D6A4F;color:#fff;padding:6px 8px;font-size:10px;text-align:left}}
+  td{{padding:5px 8px;border-bottom:.5px solid #e8e6e1;vertical-align:top}}
+  .resume{{display:flex;gap:16px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:16px;flex-wrap:wrap}}
+  .resume div{{text-align:center}}
+  .resume .val{{font-size:18px;font-weight:700;color:#2D6A4F}}
+  .resume .lbl{{font-size:9.5px;color:#666}}
+  .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
+</style></head><body>
+<h1>{titre}</h1>
+<p class="sub">{client['exploitation']} · {sous_titre} · Généré le {_date.today().strftime('%d/%m/%Y')} · MatuScore</p>
+<div class="resume">
+  <div><div class="val">{d['caisses_total']:.0f}</div><div class="lbl">Caisses</div></div>
+  <div><div class="val">{d['kg_total']:.0f} kg</div><div class="lbl">Poids total</div></div>
+  <div><div class="val">{d['nb_parcelles_renseignees']}/{d['nb_parcelles_total']}</div><div class="lbl">Parcelles pesées</div></div>
+  <div><div class="val">{d['surface_recoltee_ares']} a</div><div class="lbl">Surface récoltée</div></div>
+  <div><div class="val">{d['rendement_exploitation'] if d['rendement_exploitation'] is not None else '—'} kg/ha</div><div class="lbl">Rendement exploitation</div></div>
+</div>
+<table>
+  <thead><tr><th>Date</th><th>Parcelle(s)</th><th>Cépage</th><th>Surface</th><th>Caisses</th><th>Poids total</th><th>Poids moyen</th><th>Rendement</th></tr></thead>
+  <tbody>{rows_html if rows_html else '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">Aucune saisie</td></tr>'}</tbody>
+</table>
+<div class="footer">Carnet de vendange — VITI Sens / MatuScore</div>
+</body></html>"""
+
+
+def _carnet_export_pdf_response(client, donnees, titre, sous_titre, nom_fichier):
+    html = _html_pdf_carnet(client, donnees, titre, sous_titre)
+    try:
+        from weasyprint import HTML as WP
+        pdf = WP(string=html).write_pdf()
+        return pdf, 200, {"Content-Type": "application/pdf", "Content-Disposition": f"attachment; filename={nom_fichier}"}
+    except Exception as e:
+        print(f"[pdf] weasyprint indisponible ou en erreur ({e}) — repli HTML imprimable")
+        return html + "<script>window.print()</script>", 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route('/api/portail/<token>/carnet-vendange/export-pdf')
+def portail_carnet_export_pdf_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _carnet_export_pdf(client)
+
+@app.route('/api/portail-s/<slug>/carnet-vendange/export-pdf')
+def portail_carnet_export_pdf_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _carnet_export_pdf(client)
+
+def _carnet_export_pdf(client):
+    date_j = request.args.get('date')
+    from datetime import date as _date
+    if not date_j:
+        date_j = _date.today().isoformat()
+    donnees = _carnet_donnees_export(client, date_filtre=date_j)
+    safe = client['exploitation'].replace(' ', '_').replace('/', '-')
+    return _carnet_export_pdf_response(client, donnees, "Carnet de vendange — Journée",
+        f"Journée du {date_j}", f"Carnet_{safe}_{date_j}.pdf")
+
+
+@app.route('/api/portail/<token>/carnet-vendange/export-pdf-total')
+def portail_carnet_export_total_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _carnet_export_total(client)
+
+@app.route('/api/portail-s/<slug>/carnet-vendange/export-pdf-total')
+def portail_carnet_export_total_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _carnet_export_total(client)
+
+def _carnet_export_total(client):
+    donnees = _carnet_donnees_export(client)
+    safe = client['exploitation'].replace(' ', '_').replace('/', '-')
+    return _carnet_export_pdf_response(client, donnees, "Carnet de vendange — Récapitulatif complet",
+        "Campagne 2026", f"Carnet_{safe}_2026_total.pdf")
 
 
 # ===== Sauvegarde serveur de l'itinéraire (persiste entre appareils) =====

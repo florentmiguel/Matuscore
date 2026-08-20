@@ -172,6 +172,7 @@ textarea{min-height:60px}
    <button class="sub-tab" id="stab-rendement" onclick="showSubTab('vendanges','rendement')">⚖️ Rendement</button>
    <button class="sub-tab" id="stab-exploitation" onclick="showSubTab('vendanges','exploitation')">📊 Exploitation</button>
    <button class="sub-tab" id="stab-itineraire" onclick="showSubTab('vendanges','itineraire')">📅 Itinéraire</button>
+   <button class="sub-tab" id="stab-carnet" onclick="showSubTab('vendanges','carnet')">📔 Carnet</button>
    <button class="sub-tab" id="stab-parcelles" onclick="showSubTab('vendanges','parcelles')">🗂️ Parcelles</button>
    <button class="sub-tab" id="stab-reglages" onclick="showSubTab('vendanges','reglages')">⚙️ Réglages</button>
   </div>
@@ -528,9 +529,44 @@ textarea{min-height:60px}
     <button class="btn btn-outline" onclick="exportItinCSV()">Exporter CSV</button>
     <button class="btn btn-outline" onclick="exportItinPDF()">Exporter PDF</button>
    </div>
-   <button class="btn btn-outline" style="width:100%;margin-top:8px;color:var(--rd);border-color:#f0c4c4" onclick="itinReinitialiser()">↺ Réinitialiser (recalculer et effacer les récoltes saisies)</button>
   </div>
  </div><!-- /sec-itineraire -->
+
+ <!-- CARNET DE VENDANGE -->
+ <div class="section" id="sec-carnet">
+  <div id="carnet-synthese" class="card" style="background:var(--gbg)"></div>
+
+  <div class="card">
+   <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+    <button onclick="carnetChangerJour(-1)" style="background:var(--gbg);border:.5px solid var(--gl);border-radius:8px;width:34px;height:34px;font-size:15px;cursor:pointer;flex-shrink:0">◀</button>
+    <input type="date" id="carnet-date" onchange="carnetChargerJour()" style="flex:1;padding:8px;border:.5px solid #ddd;border-radius:8px;font-size:13px;min-width:0">
+    <button onclick="carnetChangerJour(1)" style="background:var(--gbg);border:.5px solid var(--gl);border-radius:8px;width:34px;height:34px;font-size:15px;cursor:pointer;flex-shrink:0">▶</button>
+    <button onclick="carnetAujourdhui()" style="background:var(--gd);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">Aujourd'hui</button>
+   </div>
+   <div style="display:flex;gap:8px;align-items:center">
+    <input type="text" id="carnet-filtre" placeholder="Filtrer par lieu-dit, commune, référence..." oninput="carnetRender()" style="flex:1;padding:9px 12px;border:.5px solid #ddd;border-radius:8px;font-size:13px">
+    <button id="carnet-btn-fusion" onclick="carnetToggleFusion()" style="background:#fff;border:1px solid var(--gd);color:var(--gd);border-radius:8px;padding:9px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Fusionner</button>
+   </div>
+   <div id="carnet-fusion-hint" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#FFF3E0;border:1px dashed var(--or);font-size:11px;color:#8a5a1a">Coche au moins 2 parcelles, puis valide la fusion en bas de l'écran.</div>
+  </div>
+
+  <div id="carnet-liste"><div class="loading" style="font-size:12px">Chargement...</div></div>
+
+  <div class="card" style="margin-top:8px">
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <button class="btn btn-outline" onclick="carnetExportPdfJour()">⬇️ Export PDF du jour</button>
+    <button class="btn btn-outline" onclick="carnetExportPdfTotal()">⬇️ Export PDF total campagne</button>
+   </div>
+  </div>
+
+  <div id="carnet-fusion-bar" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--gd);color:#fff;padding:12px 16px;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 -2px 10px rgba(0,0,0,.2)">
+   <div id="carnet-fusion-txt" style="font-size:12.5px">0 parcelle sélectionnée</div>
+   <div style="display:flex;gap:8px">
+    <button onclick="carnetAnnulerFusion()" style="border:none;border-radius:8px;padding:9px 14px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.15);color:#fff;cursor:pointer">Annuler</button>
+    <button onclick="carnetValiderFusion()" style="border:none;border-radius:8px;padding:9px 14px;font-size:12.5px;font-weight:600;background:#fff;color:var(--gd);cursor:pointer">Fusionner</button>
+   </div>
+  </div>
+ </div><!-- /sec-carnet -->
 
  <!-- PARCELLES -->
  <div class="section" id="sec-parcelles">
@@ -572,6 +608,12 @@ textarea{min-height:60px}
      <button onclick="gestionResetCampagne()" style="width:100%;padding:9px;background:#FFEBEE;color:var(--rd);border:.5px solid #FFCDD2;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">📦 Archiver &amp; remettre à zéro la campagne 2026</button>
     </div>
     <div id="reglages-reset-msg" style="font-size:11px;min-height:16px;margin-top:6px"></div>
+   </div>
+   <div style="border-top:.5px solid #f0ede8;padding-top:14px;margin-bottom:16px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--rd)">↺ Réinitialiser l'itinéraire</div>
+    <div style="font-size:11px;color:var(--gr);margin-bottom:10px">Efface l'itinéraire calculé (pour le recalculer de zéro) — n'efface pas le carnet de vendange ni les volumes déjà saisis.</div>
+    <button onclick="reglagesReinitialiserItineraire()" style="width:100%;padding:9px;background:#FFEBEE;color:var(--rd);border:.5px solid #FFCDD2;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Réinitialiser l'itinéraire</button>
+    <div id="reglages-itin-reset-msg" style="font-size:11px;min-height:16px;margin-top:6px"></div>
    </div>
    <div style="border-top:.5px solid #f0ede8;padding-top:14px">
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">Normalisation des communes</div>
@@ -703,7 +745,7 @@ async function loadData(){
 // Groupes : phyto contient ces sous-onglets, vendanges les autres
 var MEGA = {
  bulletin:'phyto', meteo:'phyto', traitements:'phyto', historique:'phyto', documents:'phyto',
- maturite:'vendanges', rendement:'vendanges', itineraire:'vendanges', parcelles:'vendanges', reglages:'vendanges'
+ maturite:'vendanges', rendement:'vendanges', itineraire:'vendanges', carnet:'vendanges', parcelles:'vendanges', reglages:'vendanges'
 };
 
 function showMegaTab(mega){
@@ -721,7 +763,7 @@ function showSubTab(mega, name){
  if(stab) stab.classList.add('act');
  // Masquer toutes les sections du mega-groupe
  const allSections={'phyto':['bulletin','meteo','traitements','historique','documents'],
-                    'vendanges':['maturite','rendement','exploitation','itineraire','parcelles','reglages']};
+                    'vendanges':['maturite','rendement','exploitation','itineraire','carnet','parcelles','reglages']};
  (allSections[mega]||[]).forEach(n=>{
   const s=document.getElementById('sec-'+n);
   if(s) s.classList.remove('active');
@@ -3077,8 +3119,459 @@ async function itinAfficherExemple(){
 }
 TAB_INIT.parcelles  = ()=>parcInit();
 TAB_INIT.reglages   = ()=>{}; // init silencieuse
+TAB_INIT.carnet     = ()=>carnetInit();
 
-// ===== MODULE PARCELLES =====
+// ===== MODULE CARNET DE VENDANGE =====
+let CARNET_PARCELLES = [];
+let CARNET_ENTREES = [];
+let CARNET_FUSION_MODE = false;
+let CARNET_SELECTION = new Set();
+let CARNET_FUSIONS_EN_ATTENTE = new Set();
+let _carnetSaveTimers = {};
+const CARNET_CEP_COL = {Chardonnay:'#E65100','Pinot Noir':'#7B1FA2',Meunier:'#1565C0'};
+
+function carnetInit(){
+  const dInput = document.getElementById('carnet-date');
+  if(!dInput.value) dInput.value = new Date().toISOString().slice(0,10);
+  carnetChargerJour();
+}
+
+function carnetAujourdhui(){
+  document.getElementById('carnet-date').value = new Date().toISOString().slice(0,10);
+  carnetChargerJour();
+}
+
+function carnetChangerJour(delta){
+  const inp = document.getElementById('carnet-date');
+  const d = new Date((inp.value || new Date().toISOString().slice(0,10)) + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  inp.value = d.toISOString().slice(0,10);
+  carnetChargerJour();
+}
+
+async function carnetChargerJour(){
+  const liste = document.getElementById('carnet-liste');
+  liste.innerHTML = '<div class="loading" style="font-size:12px">Chargement...</div>';
+  try{
+    const r = await fetch(`${API_BASE}/carnet-vendange`);
+    const d = await r.json();
+    CARNET_PARCELLES = d.parcelles || [];
+    CARNET_ENTREES = d.entrees || [];
+    carnetRender();
+  }catch(e){
+    liste.innerHTML = '<p style="color:var(--rd);text-align:center;padding:16px">Erreur de chargement</p>';
+  }
+}
+
+// Retrouve l'entrée du carnet (simple ou fusionnée) qui couvre CETTE parcelle, à la date affichée
+// ── Regroupement des saisies existantes ────────────────────────────────────
+function _carnetCle(ids){ return ids.slice().sort((a,b)=>a-b).join(','); }
+
+function _carnetHistoriqueSolo(idParcelle){
+  return CARNET_ENTREES.filter(e=>e.parcelles.length===1 && e.parcelles[0]===idParcelle)
+    .sort((a,b)=> a.date.localeCompare(b.date) || (a.id||0)-(b.id||0));
+}
+
+function _carnetGroupesFusion(){
+  const groupes = {};
+  CARNET_ENTREES.forEach(e=>{
+    if(e.parcelles.length<2) return;
+    const cle = _carnetCle(e.parcelles);
+    if(!groupes[cle]) groupes[cle] = {ids: e.parcelles.slice(), entries: []};
+    groupes[cle].entries.push(e);
+  });
+  Object.values(groupes).forEach(g=>g.entries.sort((a,b)=> a.date.localeCompare(b.date) || (a.id||0)-(b.id||0)));
+  return groupes;
+}
+
+function carnetRender(){
+  const dateSelectionnee = document.getElementById('carnet-date').value;
+  const filtre = (document.getElementById('carnet-filtre').value || '').toLowerCase();
+  const liste = document.getElementById('carnet-liste');
+
+  const parCommune = {};
+  CARNET_PARCELLES.forEach(p=>{
+    const c = p.commune || '—';
+    (parCommune[c] = parCommune[c] || []).push(p);
+  });
+
+  const groupesFusion = _carnetGroupesFusion();
+  // Fusions sélectionnées mais pas encore saisies (aucune ligne réelle pour l'instant)
+  (CARNET_FUSIONS_EN_ATTENTE||new Set()).forEach(cle=>{
+    if(!groupesFusion[cle]){
+      groupesFusion[cle] = {ids: cle.split(',').map(Number), entries: []};
+    }
+  });
+  const fusionsAffichees = new Set();
+
+  let html = '';
+  Object.keys(parCommune).sort().forEach(commune=>{
+    let rowsHtml = '';
+    let nbRenseignees = 0;
+
+    parCommune[commune].forEach(p=>{
+      const search = `${commune} ${p.nom} ${p.lieu_dit||''} ${p.cepage||''}`.toLowerCase();
+      if(filtre && !search.includes(filtre)) return;
+      const historique = _carnetHistoriqueSolo(p.id);
+      if(historique.some(e=>e.poids_total)) nbRenseignees++;
+      rowsHtml += carnetRenderRow(p, historique, commune, dateSelectionnee);
+    });
+
+    Object.entries(groupesFusion).forEach(([cle, g])=>{
+      if(fusionsAffichees.has(cle)) return;
+      const membres = g.ids.map(id => CARNET_PARCELLES.find(x=>x.id===id)).filter(Boolean);
+      if(!membres.length || membres[0].commune !== commune) return;
+      fusionsAffichees.add(cle);
+      const searchFusion = (commune + ' ' + membres.map(m=>m.nom).join(' ')).toLowerCase();
+      if(filtre && !searchFusion.includes(filtre)) return;
+      if(g.entries.some(e=>e.poids_total)) nbRenseignees += membres.length;
+      rowsHtml += carnetRenderFusionCard(cle, g, membres, commune, dateSelectionnee);
+    });
+
+    if(!rowsHtml) return;
+    html += `<div class="card" style="margin-bottom:8px;padding:0;overflow:hidden">
+      <div style="padding:10px 14px;background:var(--gbg);font-weight:700;font-size:13.5px;color:var(--gd);display:flex;justify-content:space-between">
+        <span>${commune}</span><span style="font-size:11px;font-weight:600;color:var(--gr)">${nbRenseignees}/${parCommune[commune].length}</span>
+      </div>
+      ${rowsHtml}
+    </div>`;
+  });
+
+  liste.innerHTML = html || '<p style="text-align:center;color:var(--gr);padding:16px;font-size:12px">Aucune parcelle ne correspond.</p>';
+  carnetRenderSynthese();
+  carnetRenderFusionBar();
+}
+
+function carnetLigneHtml(entryId, idsParcelles, entry, dateParDefaut){
+  entry = entry || {};
+  const date = entry.date || dateParDefaut || document.getElementById('carnet-date').value;
+  const caisses = entry.caisses ?? '';
+  const poidsTotal = entry.poids_total ?? '';
+  const poidsMoyen = entry.poids_moyen ?? '';
+  const note = entry.note || '';
+  const idsStr = idsParcelles.join(',');
+  const idAttr = entryId ? `data-carnet-ligne="${entryId}"` : `data-carnet-ligne-nouvelle="${idsStr}"`;
+  const eid = entryId || 'null';
+  return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:4px 0;${entryId?'border-bottom:1px solid #f5f5f5':'border-top:1px dashed #ddd;margin-top:4px;padding-top:8px'}" ${idAttr}>
+    <input type="date" value="${date}" onchange="carnetLigneChamp(${eid},[${idsStr}],'date',this.value)" style="width:118px;border:1px solid #ddd;border-radius:6px;padding:4px 5px;font-size:11px">
+    <div style="display:flex;align-items:center;gap:3px">
+      <button onclick="carnetLignePas(${eid},[${idsStr}],-1)" style="width:22px;height:22px;border-radius:5px;border:1px solid #ddd;background:var(--gbg);font-weight:700;cursor:pointer;font-size:12px">−</button>
+      <input type="number" inputmode="numeric" min="0" step="1" value="${caisses}" placeholder="cs" onchange="carnetLigneChamp(${eid},[${idsStr}],'caisses',this.value)" style="width:38px;text-align:center;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:11.5px">
+      <button onclick="carnetLignePas(${eid},[${idsStr}],1)" style="width:22px;height:22px;border-radius:5px;border:1px solid #ddd;background:var(--gbg);font-weight:700;cursor:pointer;font-size:12px">+</button>
+    </div>
+    <input type="number" inputmode="decimal" min="0" step="0.5" value="${poidsTotal}" placeholder="kg total" onchange="carnetLigneChamp(${eid},[${idsStr}],'poids_total',this.value)" style="width:62px;border:1px solid #ddd;border-radius:6px;padding:4px 5px;font-size:11.5px">
+    <input type="number" inputmode="decimal" min="0" step="0.1" value="${poidsMoyen}" placeholder="kg/cs" onchange="carnetLigneChamp(${eid},[${idsStr}],'poids_moyen',this.value)" style="width:54px;border:1px solid #ddd;border-radius:6px;padding:4px 5px;font-size:11.5px">
+    <input type="text" value="${note.replace(/"/g,'&quot;')}" placeholder="remarque" onchange="carnetLigneChamp(${eid},[${idsStr}],'note',this.value)" style="flex:1;min-width:70px;border:1px solid #eee;border-radius:6px;padding:4px 6px;font-size:11px;background:#FBFAF6">
+    ${entryId ? `<button onclick="carnetLigneSupprimer(${entryId},[${idsStr}])" style="width:22px;height:22px;border-radius:5px;border:1px solid #eee;background:#fff;color:var(--rd);flex-shrink:0;cursor:pointer;font-size:11px">✕</button>` : `<span style="font-size:9.5px;color:var(--gr);flex-shrink:0;white-space:nowrap">+ nouvelle livraison</span>`}
+  </div>`;
+}
+
+function carnetRenderRow(p, historique, commune, dateSelectionnee){
+  const col = CARNET_CEP_COL[p.cepage] || '#999';
+  const surf = p.surface_cadastrale ? Math.round(p.surface_cadastrale*100*100)/100 : null;
+  const checked = CARNET_SELECTION.has(p.id) ? 'checked' : '';
+  const termineeChecked = p.recolte_complete ? 'checked' : '';
+  const lignesHtml = historique.map(e => carnetLigneHtml(e.id, [p.id], e)).join('');
+  const nouvelleLigne = p.recolte_complete ? '' : carnetLigneHtml(null, [p.id], {}, dateSelectionnee);
+  return `<div style="padding:9px 14px;border-top:1px solid #f0ede8;${p.recolte_complete?'background:#F0F7F0':''}" data-carnet-parc="${p.id}">
+    <div style="display:flex;align-items:center;gap:10px">
+      ${CARNET_FUSION_MODE ? `<input type="checkbox" ${checked} onchange="carnetToggleSelection(${p.id},'${commune}')" style="width:18px;height:18px;flex-shrink:0">` : ''}
+      <div style="width:4px;align-self:stretch;border-radius:2px;background:${col};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">${p.nom}${p.recolte_complete?' <span style="color:var(--gd);font-size:10px;font-weight:700">✓ TERMINÉE</span>':''}</div>
+        <div style="font-size:10.5px;color:var(--gr)">${p.cepage||''}${surf?' · '+surf+' a':''}${p.lieu_dit?' · '+p.lieu_dit:''}${p.kg_recoltes_total?' · '+Math.round(p.kg_recoltes_total).toLocaleString('fr-FR')+' kg au total':''}</div>
+      </div>
+    </div>
+    <div style="padding-left:14px;margin-top:6px">
+      ${lignesHtml}
+      ${nouvelleLigne}
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;padding-left:14px;margin-top:8px;font-size:11px;color:var(--gd);font-weight:600;cursor:pointer">
+      <input type="checkbox" ${termineeChecked} onchange="carnetToggleTerminee([${p.id}],this.checked)" style="width:15px;height:15px">
+      Parcelle terminée (exclue du recalcul de l'itinéraire)
+    </label>
+  </div>`;
+}
+
+function carnetRenderFusionCard(cle, groupe, membres, commune, dateSelectionnee){
+  const cepages = [...new Set(membres.map(m=>m.cepage))];
+  const col = cepages.length===1 ? (CARNET_CEP_COL[cepages[0]]||'#999') : '#999';
+  const titre = membres.map(m=>m.nom).join(' + ');
+  const detail = membres.map(m=>`${m.nom} (${m.cepage||'—'})`).join(' · ');
+  const toutesTerminees = membres.every(m=>m.recolte_complete);
+  const lignesHtml = groupe.entries.map(e => carnetLigneHtml(e.id, groupe.ids, e)).join('');
+  const nouvelleLigne = toutesTerminees ? '' : carnetLigneHtml(null, groupe.ids, {}, dateSelectionnee);
+  return `<div style="padding:9px 14px;border-top:1px solid #f0ede8;background:#FBF9F2" data-carnet-fusion="${cle}">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:4px;align-self:stretch;border-radius:2px;background:${col};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600"><span style="font-size:9px;font-weight:700;text-transform:uppercase;background:#DFE6DF;color:var(--gd);border-radius:5px;padding:1px 5px;margin-right:5px">Fusion</span>${titre}${toutesTerminees?' <span style="color:var(--gd);font-size:10px;font-weight:700">✓ TERMINÉE</span>':''}</div>
+        <div style="font-size:10px;color:var(--gr);margin-top:2px">${detail}</div>
+      </div>
+      <button onclick="carnetDefusionnerGroupe('${cle}')" title="Retirer cette fusion" style="width:26px;height:26px;border-radius:6px;border:1px solid #ddd;background:#fff;color:var(--rd);flex-shrink:0;cursor:pointer">↔</button>
+    </div>
+    <div style="padding-left:14px;margin-top:6px">
+      ${lignesHtml}
+      ${nouvelleLigne}
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;padding-left:14px;margin-top:8px;font-size:11px;color:var(--gd);font-weight:600;cursor:pointer">
+      <input type="checkbox" ${toutesTerminees?'checked':''} onchange="carnetToggleTerminee([${groupe.ids.join(',')}],this.checked)" style="width:15px;height:15px">
+      Toutes les parcelles fusionnées sont terminées
+    </label>
+  </div>`;
+}
+
+function carnetLignePas(entryId, idsParcelles, delta){
+  const sel = entryId ? `[data-carnet-ligne="${entryId}"]` : `[data-carnet-ligne-nouvelle="${idsParcelles.join(',')}"]`;
+  const zone = document.querySelector(sel);
+  const inp = zone ? zone.querySelectorAll('input[type=number]')[0] : null;
+  if(!inp) return;
+  const val = Math.max(0, (parseInt(inp.value)||0) + delta);
+  inp.value = val;
+  carnetLigneChamp(entryId, idsParcelles, 'caisses', val);
+}
+
+async function carnetLigneChamp(entryId, idsParcelles, champ, valeur){
+  let actuel;
+  if(entryId){
+    const e = CARNET_ENTREES.find(x=>x.id===entryId);
+    actuel = {date: e?.date, caisses: e?.caisses ?? null, poids_total: e?.poids_total ?? null, poids_moyen: e?.poids_moyen ?? null, note: e?.note ?? null};
+  } else {
+    const cle = idsParcelles.join(',');
+    const zone = document.querySelector(`[data-carnet-ligne-nouvelle="${cle}"]`);
+    const nums = zone ? zone.querySelectorAll('input[type=number]') : [];
+    actuel = {
+      date: (zone && zone.querySelector('input[type=date]')?.value) || document.getElementById('carnet-date').value,
+      caisses: nums[0] ? (parseFloat(nums[0].value)||null) : null,
+      poids_total: nums[1] ? (parseFloat(nums[1].value)||null) : null,
+      poids_moyen: nums[2] ? (parseFloat(nums[2].value)||null) : null,
+      note: (zone && zone.querySelector('input[type=text]')?.value) || null,
+    };
+  }
+  actuel[champ] = valeur === '' ? null : ((champ==='note'||champ==='date') ? valeur : parseFloat(valeur));
+
+  const caisses = actuel.caisses;
+  if(caisses > 0){
+    if(champ === 'poids_total' && actuel.poids_total != null){
+      actuel.poids_moyen = Math.round((actuel.poids_total / caisses) * 100) / 100;
+    } else if(champ === 'poids_moyen' && actuel.poids_moyen != null){
+      actuel.poids_total = Math.round(actuel.poids_moyen * caisses * 100) / 100;
+    } else if(champ === 'caisses'){
+      if(actuel.poids_total != null) actuel.poids_moyen = Math.round((actuel.poids_total / caisses) * 100) / 100;
+      else if(actuel.poids_moyen != null) actuel.poids_total = Math.round(actuel.poids_moyen * caisses * 100) / 100;
+    }
+  }
+
+  const idKey = entryId || ('new_'+idsParcelles.join('_'));
+  clearTimeout(_carnetSaveTimers[idKey]);
+  _carnetSaveTimers[idKey] = setTimeout(async ()=>{
+    try{
+      const body = {date: actuel.date, id_parcelles: idsParcelles, caisses:actuel.caisses, poids_total:actuel.poids_total, poids_moyen:actuel.poids_moyen, note:actuel.note};
+      if(entryId) body.id = entryId;
+      const r = await fetch(`${API_BASE}/carnet-vendange`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if(entryId){
+        if(d.deleted){
+          CARNET_ENTREES = CARNET_ENTREES.filter(e=>e.id!==entryId);
+        } else {
+          const e = CARNET_ENTREES.find(x=>x.id===entryId);
+          if(e) Object.assign(e, actuel);
+        }
+      } else if(d.id){
+        CARNET_ENTREES.push({id:d.id, parcelles:idsParcelles, ...actuel});
+        if(idsParcelles.length>1){
+          CARNET_FUSIONS_EN_ATTENTE.delete(_carnetCle(idsParcelles));
+        }
+      }
+      carnetRender();
+      if(actuel.poids_total) await _carnetSyncItineraire(idsParcelles, actuel.date);
+    }catch(e){ console.error(e); }
+  }, 500);
+}
+
+async function carnetLigneSupprimer(entryId, idsParcelles){
+  if(!confirm('Supprimer cette ligne de saisie ?')) return;
+  try{ await fetch(`${API_BASE}/carnet-vendange/${entryId}`, {method:'DELETE'}); }catch(e){}
+  CARNET_ENTREES = CARNET_ENTREES.filter(e=>e.id!==entryId);
+  carnetRender();
+}
+
+function carnetToggleFusion(){
+  CARNET_FUSION_MODE = !CARNET_FUSION_MODE;
+  CARNET_SELECTION.clear();
+  const btn = document.getElementById('carnet-btn-fusion');
+  const hint = document.getElementById('carnet-fusion-hint');
+  btn.textContent = CARNET_FUSION_MODE ? 'Annuler la fusion' : 'Fusionner';
+  btn.style.background = CARNET_FUSION_MODE ? 'var(--gd)' : '#fff';
+  btn.style.color = CARNET_FUSION_MODE ? '#fff' : 'var(--gd)';
+  hint.style.display = CARNET_FUSION_MODE ? 'block' : 'none';
+  carnetRender();
+}
+
+let _carnetCommuneSelection = null;
+function carnetToggleSelection(idParcelle, commune){
+  if(CARNET_SELECTION.has(idParcelle)){
+    CARNET_SELECTION.delete(idParcelle);
+    if(!CARNET_SELECTION.size) _carnetCommuneSelection = null;
+  } else {
+    if(_carnetCommuneSelection && _carnetCommuneSelection !== commune){
+      alert('La fusion ne peut porter que sur des parcelles de la même commune.');
+      return;
+    }
+    _carnetCommuneSelection = commune;
+    CARNET_SELECTION.add(idParcelle);
+  }
+  carnetRenderFusionBar();
+}
+
+function carnetRenderFusionBar(){
+  const bar = document.getElementById('carnet-fusion-bar');
+  if(!CARNET_FUSION_MODE || CARNET_SELECTION.size < 1){
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  document.getElementById('carnet-fusion-txt').textContent =
+    `${CARNET_SELECTION.size} parcelle${CARNET_SELECTION.size>1?'s':''} sélectionnée${CARNET_SELECTION.size>1?'s':''}`;
+}
+
+function carnetAnnulerFusion(){
+  CARNET_SELECTION.clear();
+  _carnetCommuneSelection = null;
+  carnetRender();
+}
+
+async function carnetValiderFusion(){
+  if(CARNET_SELECTION.size < 2){ alert('Sélectionne au moins 2 parcelles.'); return; }
+  const ids = [...CARNET_SELECTION];
+  CARNET_FUSIONS_EN_ATTENTE.add(_carnetCle(ids));
+  CARNET_FUSION_MODE = false;
+  CARNET_SELECTION.clear();
+  _carnetCommuneSelection = null;
+  document.getElementById('carnet-btn-fusion').textContent = 'Fusionner';
+  document.getElementById('carnet-btn-fusion').style.background = '#fff';
+  document.getElementById('carnet-btn-fusion').style.color = 'var(--gd)';
+  document.getElementById('carnet-fusion-hint').style.display = 'none';
+  carnetRender();
+}
+
+async function carnetToggleTerminee(idParcelles, terminee){
+  try{
+    await fetch(`${API_BASE}/carnet-vendange/parcelle-terminee`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id_parcelles: idParcelles, terminee, campagne:'2026'})
+    });
+    idParcelles.forEach(id=>{
+      const p = CARNET_PARCELLES.find(x=>x.id===id);
+      if(p) p.recolte_complete = terminee ? 1 : 0;
+    });
+    carnetRender();
+  }catch(e){ alert('Erreur lors de la mise à jour.'); }
+}
+
+async function carnetDefusionnerGroupe(cle){
+  if(!confirm('Supprimer toutes les lignes de cette fusion ? Chaque parcelle pourra être ressaisie individuellement.')) return;
+  const groupes = _carnetGroupesFusion();
+  const g = groupes[cle];
+  CARNET_FUSIONS_EN_ATTENTE.delete(cle);
+  if(g){
+    for(const e of g.entries){
+      try{ await fetch(`${API_BASE}/carnet-vendange/${e.id}`, {method:'DELETE'}); }catch(err){}
+    }
+  }
+  await carnetChargerJour();
+}
+
+
+async function _carnetSyncItineraire(idsParcelles, date){
+  if(!_itinData){
+    try{
+      const r = await fetch(`${API_BASE}/itineraire/sauvegarde`);
+      const d = await r.json();
+      if(d && d.data) _itinData = d.data;
+    }catch(e){}
+  }
+  if(!_itinData || !_itinData.itineraire || !_itinData.itineraire.length) return;
+
+  const objectif = _itinData.kg_par_jour || 5000;
+  const addD = (base,n)=>{const d=new Date(base+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+  let touche = false;
+
+  idsParcelles.forEach(pid=>{
+    let srcJi = -1, srcPi = -1;
+    for(let i=0;i<_itinData.itineraire.length;i++){
+      const pi = _itinData.itineraire[i].parcelles.findIndex(p=>p.id===pid);
+      if(pi>=0){ srcJi=i; srcPi=pi; break; }
+    }
+    if(srcJi<0) return; // parcelle absente de l'itinéraire (déjà marquée terminée par ex.) -> rien à synchroniser
+    if(_itinData.itineraire[srcJi].date === date) return; // déjà au bon endroit
+    touche = true;
+
+    const [parc] = _itinData.itineraire[srcJi].parcelles.splice(srcPi,1);
+
+    let dstJi = _itinData.itineraire.findIndex(j=>j.date===date);
+    if(dstJi<0){
+      const nouveauJour = {date, jour:0, parcelles:[]};
+      let inseree = false;
+      for(let i=0;i<_itinData.itineraire.length;i++){
+        if(_itinData.itineraire[i].date > date){
+          _itinData.itineraire.splice(i,0,nouveauJour); dstJi=i; inseree=true; break;
+        }
+      }
+      if(!inseree){ _itinData.itineraire.push(nouveauJour); dstJi=_itinData.itineraire.length-1; }
+      if(dstJi<=srcJi) srcJi++; // l'insertion a décalé la position du jour source
+    }
+    _itinData.itineraire[dstJi].parcelles.unshift(parc);
+
+    const minJi = Math.min(srcJi, dstJi);
+    _itinRecalculerDepuis(minJi, objectif, addD, _itinData.itineraire[minJi].date);
+  });
+
+  if(touche){
+    _itinData.itineraire = _itinData.itineraire.filter(j=>j.parcelles && j.parcelles.length>0);
+    _itinData.itineraire.forEach((j,i)=>{j.jour=i+1;});
+    _renderItineraire(_itinData); // sauvegarde aussi côté serveur
+  }
+}
+
+function carnetRenderSynthese(){
+  const el = document.getElementById('carnet-synthese');
+  let totCaisses=0, totKg=0, totSurfPesee=0, totKgPese=0;
+  const parcellesRenseignees = new Set();
+  CARNET_ENTREES.forEach(e=>{
+    totCaisses += e.caisses || 0;
+    totKg += e.poids_total || 0;
+    if(e.poids_total){
+      e.parcelles.forEach(id=>{
+        parcellesRenseignees.add(id);
+        const p = CARNET_PARCELLES.find(x=>x.id===id);
+        if(p && p.surface_cadastrale) totSurfPesee += p.surface_cadastrale*100/e.parcelles.length;
+      });
+      totKgPese += e.poids_total;
+    }
+  });
+  const rendement = totSurfPesee>0 ? Math.round(totKgPese*100/totSurfPesee) : null;
+  el.innerHTML = `
+   <div style="font-size:11px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">📔 Carnet de vendange — Campagne 2026</div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Caisses saisies</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${totCaisses.toLocaleString('fr-FR')}</div></div>
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Poids total</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${totKg.toLocaleString('fr-FR')} kg</div></div>
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Parcelles pesées</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${parcellesRenseignees.size}/${CARNET_PARCELLES.length}</div></div>
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Rendement exploitation</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${rendement!=null?rendement.toLocaleString('fr-FR')+' kg/ha':'—'}</div></div>
+   </div>`;
+}
+
+function carnetExportPdfJour(){
+  const date = document.getElementById('carnet-date').value;
+  window.open(`${API_BASE}/carnet-vendange/export-pdf?date=${date}`, '_blank');
+}
+function carnetExportPdfTotal(){
+  window.open(`${API_BASE}/carnet-vendange/export-pdf-total`, '_blank');
+}
+
+
 let PARC_LIST_CACHE = [];
 let _parcListMergeSelected = new Set();
 
@@ -4861,7 +5354,7 @@ function _renderItineraire(d){
      <span><strong>${p.nom}</strong> <span style="color:var(--gr)">· ${p.cepage||''} · ${p.commune||''}</span></span>
      <span style="color:var(--gd);font-weight:600">${(p.kg_recoltes_total||0).toLocaleString('fr-FR')} kg</span>
     </div>`).join('')}
-   <div style="font-size:10px;color:var(--gr);margin-top:6px">Exclues du recalcul ci-dessous — pour les modifier, utilise "✏️ Récolte" ou "Réinitialiser".</div>
+   <div style="font-size:10px;color:var(--gr);margin-top:6px">Exclues du recalcul ci-dessous — pour les modifier, utilise l'onglet <a href="#" onclick="showTab('carnet');return false" style="color:var(--gd);font-weight:600">Carnet</a> ou "Réinitialiser".</div>
   </div>`;
  }
  (d.itineraire||[]).forEach((j,ji)=>{
@@ -4902,19 +5395,7 @@ function _renderItineraire(d){
     h+=`<button onclick="event.stopPropagation();itinDupliquerParcelle('${j.date}',${p.id})" title="Parcelle entamée — saisir les kg cueillis et fractionner" style="background:var(--gbg);border:.5px solid var(--gl);color:var(--gd);border-radius:6px;padding:2px 7px;font-size:12px;cursor:pointer;flex-shrink:0">⊕</button>`;
     h+=`</div>`;
     h+=`</div>`;
-    // Bouton saisie récolte → modal
-    const _kgRecoltes=p._kg_recoltes||0;
-    h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">`;
-    if(_kgRecoltes>0){
-     h+=`<div style="font-size:11px;color:var(--gd);font-weight:600">✓ ${_kgRecoltes.toLocaleString('fr-FR')} kg récoltés${p._finie?' · terminée':' · en cours'}</div>`;
-    } else {
-     h+=`<div></div>`;
-    }
-    h+=`<button onclick="event.stopPropagation();_ouvrirRecolteParId('${j.date}',${p.id})"
-     style="background:var(--gd);color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
-     ✏️ Récolte
-    </button>`;
-    h+=`</div></div>`;
+    h+=`</div>`;
    });
    h+=`</div>`;
   });
@@ -5202,15 +5683,21 @@ async function itinClickParcelle(p){
  }catch(e){document.getElementById('itin-parc-detail').innerHTML=`<p style="color:var(--rd)">Erreur : ${e.message}</p>`;}
 }
 
-async function itinReinitialiser(){
- if(!confirm("Réinitialiser l'itinéraire ?\n\nCeci va :\n- Recalculer l'itinéraire depuis zéro\n- Effacer tous les volumes récoltés déjà saisis (dans l'itinéraire ET dans le tableau de rendement de l'onglet Exploitation)\n\nCette action est irréversible. Continuer ?")) return;
+async function reglagesReinitialiserItineraire(){
+ if(!confirm("Réinitialiser l'itinéraire ?\n\nLe calendrier calculé sera effacé et devra être recalculé depuis l'onglet Itinéraire.\n\nLe carnet de vendange et les volumes déjà saisis ne sont PAS touchés — seul le PLAN est réinitialisé, pas ce qui a réellement été récolté.\n\nContinuer ?")) return;
+ const msg = document.getElementById('reglages-itin-reset-msg');
+ msg.style.color = 'var(--gr)'; msg.textContent = 'Réinitialisation...';
  try{
-  await fetch(`${API_BASE}/recolte-jour/reinitialiser`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({campagne:'2026'})});
- }catch(e){ alert('Erreur lors de la réinitialisation des données de rendement, mais on relance quand même le calcul.'); }
- _itinData = null;
- localStorage.removeItem('itin_imperatifs');
- localStorage.removeItem('itin_data_'+TOKEN);
- await calcItineraire();
+  await fetch(`${API_BASE}/itineraire/sauvegarde`, {method:'DELETE'});
+  _itinData = null;
+  localStorage.removeItem('itin_imperatifs');
+  localStorage.removeItem('itin_data_'+TOKEN);
+  msg.style.color = 'var(--gd)';
+  msg.textContent = "✓ Itinéraire réinitialisé — retourne sur l'onglet Itinéraire pour le recalculer.";
+ }catch(e){
+  msg.style.color = 'var(--rd)';
+  msg.textContent = 'Erreur lors de la réinitialisation.';
+ }
 }
 
 function exportItinCSV(){
