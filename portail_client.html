@@ -3305,7 +3305,7 @@ function carnetRenderRow(p, historique, commune, dateSelectionnee){
       <div style="width:4px;align-self:stretch;border-radius:2px;background:${col};flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600">${p.nom}${p.recolte_complete?' <span style="color:var(--gd);font-size:10px;font-weight:700">✓ TERMINÉE</span>':''}</div>
-        <div style="font-size:10.5px;color:var(--gr)">${p.cepage||''}${surf?' · '+surf+' a':''}${p.lieu_dit?' · '+p.lieu_dit:''}${p.kg_recoltes_total?' · '+Math.round(p.kg_recoltes_total).toLocaleString('fr-FR')+' kg au total':''}</div>
+        <div style="font-size:10.5px;color:var(--gr)">${p.cepage||''}${surf?' · '+surf+' a':''}${(p.lieu_dit&&p.lieu_dit!==p.nom)?' · '+p.lieu_dit:''}${p.kg_recoltes_total?' · '+Math.round(p.kg_recoltes_total).toLocaleString('fr-FR')+' kg au total':''}</div>
       </div>
     </div>
     <div style="padding-left:14px;margin-top:6px">
@@ -3314,7 +3314,7 @@ function carnetRenderRow(p, historique, commune, dateSelectionnee){
     </div>
     <label style="display:flex;align-items:center;gap:6px;padding-left:14px;margin-top:8px;font-size:11px;color:var(--gd);font-weight:600;cursor:pointer">
       <input type="checkbox" ${termineeChecked} onchange="carnetToggleTerminee([${p.id}],this.checked)" style="width:15px;height:15px">
-      Parcelle terminée (exclue du recalcul de l'itinéraire)
+      Parcelle terminée
     </label>
   </div>`;
 }
