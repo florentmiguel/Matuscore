@@ -578,6 +578,17 @@ def init_db():
         )
     ''')
     conn.executescript('''
+        CREATE TABLE IF NOT EXISTS parametres_appellation (
+            id_client                  TEXT NOT NULL,
+            campagne                   TEXT NOT NULL DEFAULT '2026',
+            rendement_appellation_kgha REAL,
+            depassement_bloque_kgha    REAL,
+            depassement_vo_kgha        REAL,
+            updated_at                 TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (id_client, campagne)
+        )
+    ''')
+    conn.executescript('''
         CREATE TABLE IF NOT EXISTS carnet_vendange (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             id_client    TEXT NOT NULL,
@@ -6110,6 +6121,64 @@ def _carnet_export_total(client):
     safe = client['exploitation'].replace(' ', '_').replace('/', '-')
     return _carnet_export_pdf_response(client, donnees, "Carnet de vendange — Récapitulatif complet",
         "Campagne 2026", f"Carnet_{safe}_2026_total.pdf")
+
+
+# ===== Paramètres d'appellation (rendement autorisé, dépassements) — persistés
+# indépendamment de l'itinéraire, pour que le carnet puisse calculer le volume
+# restant à récolter même si l'itinéraire n'a jamais été calculé =====
+
+@app.route('/api/portail/<token>/appellation-params', methods=['GET'])
+def portail_appellation_get_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _appellation_params_get(client)
+
+@app.route('/api/portail-s/<slug>/appellation-params', methods=['GET'])
+def portail_appellation_get_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _appellation_params_get(client)
+
+def _appellation_params_get(client):
+    campagne = request.args.get('campagne', '2026')
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM parametres_appellation WHERE id_client=? AND campagne=?",
+        (client['id'], campagne)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"rendement_appellation_kgha": None, "depassement_bloque_kgha": None, "depassement_vo_kgha": None})
+    return jsonify(dict_from_row(row))
+
+
+@app.route('/api/portail/<token>/appellation-params', methods=['POST'])
+def portail_appellation_save_token(token):
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    return _appellation_params_save(client)
+
+@app.route('/api/portail-s/<slug>/appellation-params', methods=['POST'])
+def portail_appellation_save_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _appellation_params_save(client)
+
+def _appellation_params_save(client):
+    d = request.json or {}
+    campagne = d.get('campagne') or '2026'
+    conn = get_db()
+    conn.execute("""INSERT INTO parametres_appellation
+        (id_client, campagne, rendement_appellation_kgha, depassement_bloque_kgha, depassement_vo_kgha, updated_at)
+        VALUES (?,?,?,?,?, datetime('now'))
+        ON CONFLICT(id_client, campagne) DO UPDATE SET
+            rendement_appellation_kgha=excluded.rendement_appellation_kgha,
+            depassement_bloque_kgha=excluded.depassement_bloque_kgha,
+            depassement_vo_kgha=excluded.depassement_vo_kgha,
+            updated_at=excluded.updated_at""",
+        (client['id'], campagne, d.get('rendement_appellation_kgha'), d.get('depassement_bloque_kgha'), d.get('depassement_vo_kgha')))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
 
 
 # ===== Sauvegarde serveur de l'itinéraire (persiste entre appareils) =====
