@@ -3150,7 +3150,6 @@ let CARNET_ENTREES = [];
 let CARNET_FUSION_MODE = false;
 let CARNET_SELECTION = new Set();
 let CARNET_FUSIONS_EN_ATTENTE = new Set();
-let CARNET_SOLDE_A_VENDANGER = null;
 let CARNET_VOLUME_AUTORISE = null;
 let _carnetSaveTimers = {};
 const CARNET_CEP_COL = {Chardonnay:'#E65100','Pinot Noir':'#7B1FA2',Meunier:'#1565C0'};
@@ -3194,30 +3193,20 @@ async function _carnetRafraichirDonnees(){
   CARNET_PARCELLES = d.parcelles || [];
   CARNET_ENTREES = d.entrees || [];
   // Le "volume autorisé" (plafond d'appellation × surface) est une valeur stable —
-  // elle ne bouge pas à chaque récolte, seul ce qui a déjà été récolté change. On la
-  // récupère en priorité du dernier itinéraire calculé ; si l'utilisateur ne se sert
-  // pas de l'itinéraire, on retombe sur le rendement d'appellation saisi dans
-  // l'onglet Rendement (calculé ici à partir de la surface totale des parcelles).
+  // elle ne bouge pas à chaque récolte, seul ce qui a déjà été récolté change. On le
+  // calcule uniquement à partir du rendement d'appellation saisi dans l'onglet
+  // Rendement (indépendant de l'itinéraire).
   try{
-    const r2 = await fetch(`${API_BASE}/itineraire/sauvegarde`);
-    const d2 = await r2.json();
-    CARNET_VOLUME_AUTORISE = (d2 && d2.data && d2.data.volume_autorise_kg != null) ? d2.data.volume_autorise_kg : null;
-    CARNET_SOLDE_A_VENDANGER = (d2 && d2.data && d2.data.solde_a_vendanger != null) ? d2.data.solde_a_vendanger : null;
-  }catch(e){ CARNET_VOLUME_AUTORISE = null; CARNET_SOLDE_A_VENDANGER = null; }
-
-  if(CARNET_VOLUME_AUTORISE == null){
-    try{
-      const r3 = await fetch(`${API_BASE}/appellation-params`);
-      const d3 = await r3.json();
-      const totalKgHa = (d3.rendement_appellation_kgha||0) + (d3.depassement_bloque_kgha||0) + (d3.depassement_vo_kgha||0);
-      if(totalKgHa){
-        const surfTotHa = CARNET_PARCELLES.reduce((s,p)=>s+(p.surface_cadastrale||0),0);
-        CARNET_VOLUME_AUTORISE = surfTotHa>0 ? Math.round(totalKgHa*surfTotHa) : null;
-      } else {
-        CARNET_VOLUME_AUTORISE = null;
-      }
-    }catch(e){}
-  }
+    const r3 = await fetch(`${API_BASE}/appellation-params`);
+    const d3 = await r3.json();
+    const totalKgHa = (d3.rendement_appellation_kgha||0) + (d3.depassement_bloque_kgha||0) + (d3.depassement_vo_kgha||0);
+    if(totalKgHa){
+      const surfTotHa = CARNET_PARCELLES.reduce((s,p)=>s+(p.surface_cadastrale||0),0);
+      CARNET_VOLUME_AUTORISE = surfTotHa>0 ? Math.round(totalKgHa*surfTotHa) : null;
+    } else {
+      CARNET_VOLUME_AUTORISE = null;
+    }
+  }catch(e){ CARNET_VOLUME_AUTORISE = null; }
 }
 
 // Retrouve l'entrée du carnet (simple ou fusionnée) qui couvre CETTE parcelle, à la date affichée
@@ -3639,15 +3628,12 @@ function carnetRenderSynthese(){
     }
   });
   const rendement = totSurfRecolteeAres>0 ? Math.round(totKg*100/totSurfRecolteeAres) : null;
-  // Solde en temps réel : plafond autorisé (stable, tiré de l'itinéraire ou du
-  // rendement d'appellation saisi dans l'onglet Rendement) moins ce qui a déjà été
-  // récolté (toujours à jour, recalculé à chaque saisie du carnet).
+  // Solde en temps réel : plafond autorisé (rendement d'appellation × surface,
+  // stable) moins ce qui a déjà été récolté (toujours à jour, recalculé à chaque
+  // saisie du carnet).
   let soldeCarte;
   if(CARNET_VOLUME_AUTORISE != null){
     const solde = Math.max(0, Math.round(CARNET_VOLUME_AUTORISE - totKg)).toLocaleString('fr-FR')+' kg';
-    soldeCarte = `<div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Volume restant à récolter</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${solde}</div></div>`;
-  } else if(CARNET_SOLDE_A_VENDANGER != null){
-    const solde = Math.round(CARNET_SOLDE_A_VENDANGER).toLocaleString('fr-FR')+' kg';
     soldeCarte = `<div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Volume restant à récolter</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${solde}</div></div>`;
   } else {
     soldeCarte = `<div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10.5px;color:var(--gr);line-height:1.4">Veuillez saisir le rendement/ha autorisé — <a href="#" onclick="showTab('rendement');return false" style="color:var(--gd);font-weight:600">onglet Rendement</a></div></div>`;
