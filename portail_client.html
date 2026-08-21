@@ -3153,14 +3153,21 @@ async function carnetChargerJour(){
   const liste = document.getElementById('carnet-liste');
   liste.innerHTML = '<div class="loading" style="font-size:12px">Chargement...</div>';
   try{
-    const r = await fetch(`${API_BASE}/carnet-vendange`);
-    const d = await r.json();
-    CARNET_PARCELLES = d.parcelles || [];
-    CARNET_ENTREES = d.entrees || [];
+    await _carnetRafraichirDonnees();
     carnetRender();
   }catch(e){
     liste.innerHTML = '<p style="color:var(--rd);text-align:center;padding:16px">Erreur de chargement</p>';
   }
+}
+
+// Recharge les données depuis le serveur SANS afficher l'écran de chargement — utilisé
+// après chaque saisie pour que la synthèse (poids, surface, rendement) reflète bien le
+// total à jour côté serveur, plutôt que de rafistoler l'état local qui peut diverger.
+async function _carnetRafraichirDonnees(){
+  const r = await fetch(`${API_BASE}/carnet-vendange`);
+  const d = await r.json();
+  CARNET_PARCELLES = d.parcelles || [];
+  CARNET_ENTREES = d.entrees || [];
 }
 
 // Retrouve l'entrée du carnet (simple ou fusionnée) qui couvre CETTE parcelle, à la date affichée
@@ -3407,19 +3414,14 @@ async function carnetLigneChamp(entryId, idsParcelles, champ, valeur){
         method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
       });
       const d = await r.json();
-      if(entryId){
-        if(d.deleted){
-          CARNET_ENTREES = CARNET_ENTREES.filter(e=>e.id!==entryId);
-        } else {
-          const e = CARNET_ENTREES.find(x=>x.id===entryId);
-          if(e) Object.assign(e, actuel);
-        }
-      } else if(d.id){
-        CARNET_ENTREES.push({id:d.id, parcelles:idsParcelles, ...actuel});
-        if(idsParcelles.length>1){
-          CARNET_FUSIONS_EN_ATTENTE.delete(_carnetCle(idsParcelles));
-        }
+      if(!entryId && d.id && idsParcelles.length>1){
+        CARNET_FUSIONS_EN_ATTENTE.delete(_carnetCle(idsParcelles));
       }
+      // Recharger depuis le serveur (pas seulement rafistoler l'état local) — le
+      // total par parcelle utilisé par la synthèse (poids, surface, rendement) est
+      // recalculé côté serveur à chaque saisie, sinon la carte de synthèse affiche
+      // des chiffres périmés dès qu'on quitte le simple compteur de caisses.
+      await _carnetRafraichirDonnees();
       carnetRender();
       if(actuel.poids_total) await _carnetSyncItineraire(idsParcelles, actuel.date);
     }catch(e){ console.error(e); }
@@ -3429,7 +3431,7 @@ async function carnetLigneChamp(entryId, idsParcelles, champ, valeur){
 async function carnetLigneSupprimer(entryId, idsParcelles){
   if(!confirm('Supprimer cette ligne de saisie ?')) return;
   try{ await fetch(`${API_BASE}/carnet-vendange/${entryId}`, {method:'DELETE'}); }catch(e){}
-  CARNET_ENTREES = CARNET_ENTREES.filter(e=>e.id!==entryId);
+  await _carnetRafraichirDonnees();
   carnetRender();
 }
 
