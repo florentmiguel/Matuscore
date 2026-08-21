@@ -3351,7 +3351,7 @@ function carnetRenderRow(p, historique, commune, dateSelectionnee){
       <div style="width:4px;align-self:stretch;border-radius:2px;background:${col};flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600">${p.nom}${p.recolte_complete?' <span style="color:var(--gd);font-size:10px;font-weight:700">✓ TERMINÉE</span>':''}</div>
-        <div style="font-size:10.5px;color:var(--gr)">${p.cepage||''}${surf?' · '+surf+' a':''}${(p.lieu_dit&&p.lieu_dit!==p.nom)?' · '+p.lieu_dit:''}${p.kg_recoltes_total?' · '+Math.round(p.kg_recoltes_total).toLocaleString('fr-FR')+' kg au total':''}</div>
+        <div style="font-size:10.5px;color:var(--gr)">${p.cepage||''}${surf?' · '+surf+' a':''}${(p.lieu_dit&&p.lieu_dit!==p.nom)?' · '+p.lieu_dit:''}${p.kg_recoltes_total?' · '+Math.round(p.kg_recoltes_total).toLocaleString('fr-FR')+' kg au total':''}${(p.kg_recoltes_total&&p.surface_cadastrale)?' · <strong style="color:var(--gd)">'+Math.round(p.kg_recoltes_total/p.surface_cadastrale).toLocaleString('fr-FR')+' kg/ha</strong>':''}</div>
       </div>
     </div>
     <div style="padding-left:14px;margin-top:6px">
