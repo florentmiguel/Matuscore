@@ -5956,57 +5956,93 @@ def _carnet_marquer_terminee(client):
 
 
 def _carnet_donnees_export(client, campagne='2026', date_filtre=None):
-    """Rassemble les entrées du carnet (avec leurs parcelles, communes, cépages,
-    surfaces) pour construire un export — journalier si date_filtre est fourni,
-    sinon toute la campagne. Calcule le rendement par entrée (poids total / surface
-    des parcelles concernées) et le rendement d'exploitation global (uniquement sur
-    ce qui a réellement été pesé), comme dans l'onglet Rendement."""
+    """Rassemble les entrées du carnet pour construire un export — journalier si
+    date_filtre est fourni (une ligne par livraison de ce jour), sinon toute la
+    campagne (une seule ligne par parcelle/groupe fusionné, cumulant toutes ses
+    livraisons quel que soit le nombre de jours).
+
+    Le rendement affiché est TOUJOURS celui cumulé de la parcelle sur l'ensemble de
+    la campagne (jamais celui d'une seule livraison isolée sur la surface totale,
+    qui n'a pas de sens) — marqué "provisoire" tant que la parcelle n'est pas
+    cochée terminée. Les totaux d'exploitation (surface récoltée, rendement) ne
+    comptent que les parcelles terminées, chacune une seule fois."""
     conn = get_db()
-    sql = "SELECT * FROM carnet_vendange WHERE id_client=? AND campagne=?"
-    params = [client['id'], campagne]
-    if date_filtre:
-        sql += " AND date=?"; params.append(date_filtre)
-    sql += " ORDER BY date, id"
-    entrees = dicts_from_rows(conn.execute(sql, params).fetchall())
+    toutes_entrees = dicts_from_rows(conn.execute(
+        "SELECT * FROM carnet_vendange WHERE id_client=? AND campagne=? ORDER BY date, id",
+        (client['id'], campagne)).fetchall())
+    for e in toutes_entrees:
+        e['ids'] = [r['id_parcelle'] for r in conn.execute(
+            "SELECT id_parcelle FROM carnet_vendange_parcelles WHERE id_carnet=?", (e['id'],)).fetchall()]
 
     toutes_parcelles = dicts_from_rows(conn.execute(
         "SELECT id, nom, lieu_dit, cepage, commune, surface_cadastrale FROM parcelles WHERE id_client=?",
         (client['id'],)).fetchall())
     parc_par_id = {p['id']: p for p in toutes_parcelles}
 
+    def est_terminee(ids):
+        for pid in ids:
+            row = conn.execute(
+                "SELECT recolte_complete FROM rendements WHERE id_parcelle=? AND id_client=? AND campagne=? ORDER BY id DESC LIMIT 1",
+                (pid, client['id'], campagne)).fetchone()
+            if not row or not row['recolte_complete']:
+                return False
+        return True
+
+    groupes = {}
+    for e in toutes_entrees:
+        if not e['ids']: continue
+        cle = tuple(sorted(e['ids']))
+        groupes.setdefault(cle, {'ids': list(cle), 'entries': []})['entries'].append(e)
+
+    for cle, g in groupes.items():
+        membres = [parc_par_id[pid] for pid in g['ids'] if pid in parc_par_id]
+        g['surface_ares'] = sum((m.get('surface_cadastrale') or 0) * 100 for m in membres)
+        g['kg_cumule'] = sum(e.get('poids_total') or 0 for e in g['entries'])
+        g['caisses_cumule'] = sum(e.get('caisses') or 0 for e in g['entries'])
+        g['terminee'] = est_terminee(g['ids'])
+        g['rendement_cumule'] = round(g['kg_cumule'] * 100 / g['surface_ares']) if g['surface_ares'] and g['kg_cumule'] else None
+        g['noms'] = " + ".join(m['nom'] for m in membres)
+        g['commune'] = ", ".join(sorted(set(m.get('commune') or '' for m in membres)))
+        g['cepage'] = ", ".join(sorted(set(m.get('cepage') or '' for m in membres)))
+
     lignes = []
-    kg_pese_total, surf_pesee_total = 0.0, 0.0
-    caisses_total, kg_total = 0.0, 0.0
-    ids_parcelles_renseignees = set()
-    for e in entrees:
-        ids = [r['id_parcelle'] for r in conn.execute(
-            "SELECT id_parcelle FROM carnet_vendange_parcelles WHERE id_carnet=?", (e['id'],)).fetchall()]
-        parcs = [parc_par_id[i] for i in ids if i in parc_par_id]
-        if not parcs: continue
-        surf_ares = sum((p.get('surface_cadastrale') or 0) * 100 for p in parcs)
-        noms = " + ".join(p['nom'] for p in parcs)
-        communes = ", ".join(sorted(set(p.get('commune') or '' for p in parcs)))
-        cepages = ", ".join(sorted(set(p.get('cepage') or '' for p in parcs)))
-        rendement = round(e['poids_total'] * 100 / surf_ares) if e.get('poids_total') and surf_ares else None
-        lignes.append({
-            "date": e['date'], "nom": noms, "commune": communes, "cepage": cepages,
-            "surface_ares": round(surf_ares, 2), "caisses": e.get('caisses'),
-            "poids_total": e.get('poids_total'), "poids_moyen": e.get('poids_moyen'),
-            "rendement": rendement, "note": e.get('note'),
-        })
-        if e.get('poids_total'):
-            kg_pese_total += e['poids_total']; surf_pesee_total += surf_ares
-            ids_parcelles_renseignees.update(ids)
-        caisses_total += e.get('caisses') or 0
-        kg_total += e.get('poids_total') or 0
+    if date_filtre:
+        for cle, g in groupes.items():
+            for e in g['entries']:
+                if e['date'] != date_filtre: continue
+                lignes.append({
+                    "date": e['date'], "nom": g['noms'], "commune": g['commune'], "cepage": g['cepage'],
+                    "surface_ares": round(g['surface_ares'], 2),
+                    "caisses": e.get('caisses'), "poids_total": e.get('poids_total'), "poids_moyen": e.get('poids_moyen'),
+                    "rendement": g['rendement_cumule'], "provisoire": not g['terminee'], "note": e.get('note'),
+                })
+    else:
+        for cle, g in groupes.items():
+            if not g['kg_cumule']: continue
+            dates = sorted(set(e['date'] for e in g['entries']))
+            date_txt = dates[0] if len(dates) == 1 else f"{dates[0]} → {dates[-1]}"
+            poids_moyen_global = round(g['kg_cumule'] / g['caisses_cumule'], 1) if g['caisses_cumule'] else None
+            notes = "; ".join(e['note'] for e in g['entries'] if e.get('note'))
+            lignes.append({
+                "date": date_txt, "nom": g['noms'], "commune": g['commune'], "cepage": g['cepage'],
+                "surface_ares": round(g['surface_ares'], 2),
+                "caisses": g['caisses_cumule'], "poids_total": g['kg_cumule'], "poids_moyen": poids_moyen_global,
+                "rendement": g['rendement_cumule'], "provisoire": not g['terminee'], "note": notes or None,
+            })
 
     conn.close()
-    rendement_exploitation = round(kg_pese_total * 100 / surf_pesee_total) if surf_pesee_total else None
+    caisses_total = sum(l['caisses'] or 0 for l in lignes)
+    kg_total = sum(l['poids_total'] or 0 for l in lignes)
+    kg_termine = sum(g['kg_cumule'] for g in groupes.values() if g['terminee'])
+    surf_termine = sum(g['surface_ares'] for g in groupes.values() if g['terminee'])
+    rendement_exploitation = round(kg_termine * 100 / surf_termine) if surf_termine else None
+    nb_parcelles_renseignees = len(set(pid for g in groupes.values() if g['kg_cumule'] for pid in g['ids']))
+
     return {
         "lignes": lignes, "caisses_total": caisses_total, "kg_total": kg_total,
         "rendement_exploitation": rendement_exploitation,
-        "nb_parcelles_renseignees": len(ids_parcelles_renseignees), "nb_parcelles_total": len(toutes_parcelles),
-        "surface_recoltee_ares": round(surf_pesee_total, 2),
+        "nb_parcelles_renseignees": nb_parcelles_renseignees, "nb_parcelles_total": len(toutes_parcelles),
+        "surface_recoltee_ares": round(surf_termine, 2),
     }
 
 
@@ -6019,6 +6055,9 @@ def _html_pdf_carnet(client, donnees, titre, sous_titre):
         if l['commune'] != commune_actuelle:
             rows_html += f'<tr><td colspan="8" style="background:#EAF3DE;font-weight:700;color:#2D6A4F;padding:6px 8px">{l["commune"] or "—"}</td></tr>'
             commune_actuelle = l['commune']
+        rendement_txt = f"{l['rendement']} kg/ha" if l['rendement'] is not None else '—'
+        if l.get('provisoire') and l['rendement'] is not None:
+            rendement_txt += ' <span style="color:#B7791F;font-size:9px">(provisoire)</span>'
         rows_html += f"""<tr>
             <td>{l['date']}</td>
             <td><strong>{l['nom']}</strong></td>
@@ -6027,7 +6066,7 @@ def _html_pdf_carnet(client, donnees, titre, sous_titre):
             <td>{(f"{l['caisses']:g}" if l['caisses'] is not None else '—')}</td>
             <td>{l['poids_total']:.0f} kg</td>
             <td>{l['poids_moyen']:.1f} kg/caisse</td>
-            <td>{l['rendement'] if l['rendement'] is not None else '—'} kg/ha</td>
+            <td>{rendement_txt}</td>
         </tr>""" if l.get('poids_total') and l.get('poids_moyen') else f"""<tr>
             <td>{l['date']}</td>
             <td><strong>{l['nom']}</strong></td>
