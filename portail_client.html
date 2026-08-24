@@ -3248,6 +3248,12 @@ function carnetRender(){
       groupesFusion[cle] = {ids: cle.split(',').map(Number), entries: []};
     }
   });
+  // Parcelles déjà couvertes par une fusion (réelle ou en attente de saisie) — une
+  // telle parcelle n'a pas besoin de sa propre carte solo tant qu'elle n'a pas
+  // AUSSI un historique solo à elle : sinon elle apparaît deux fois (dans la
+  // fusion ET seule, vide), donnant à tort l'impression que la fusion n'a pas pris.
+  const idsCouvertsParFusion = new Set();
+  Object.values(groupesFusion).forEach(g=>g.ids.forEach(id=>idsCouvertsParFusion.add(id)));
   const fusionsAffichees = new Set();
 
   let html = '';
@@ -3259,6 +3265,7 @@ function carnetRender(){
       const search = `${commune} ${p.nom} ${p.lieu_dit||''} ${p.cepage||''}`.toLowerCase();
       if(filtre && !search.includes(filtre)) return;
       const historique = _carnetHistoriqueSolo(p.id);
+      if(!historique.length && idsCouvertsParFusion.has(p.id)) return;
       if(historique.some(e=>e.poids_total)) nbRenseignees++;
       rowsHtml += carnetRenderRow(p, historique, commune, dateSelectionnee);
     });
@@ -3615,22 +3622,27 @@ async function _carnetSyncItineraire(idsParcelles, date){
 function carnetRenderSynthese(){
   const el = document.getElementById('carnet-synthese');
 
-  // Le poids total et la surface récoltée se basent sur le total par parcelle
-  // (kg_recoltes_total), pas uniquement sur les saisies du carnet — ça inclut aussi
-  // les volumes saisis via l'ancien système (itinéraire) pour les clients qui
-  // l'avaient utilisé avant l'arrivée du carnet, sinon leurs données disparaissaient
-  // de cette synthèse alors qu'elles restent bien dans le tableau rendement.
-  let totKg = 0, totSurfRecolteeAres = 0;
+  // "Poids total" / volume restant : TOUT ce qui a été pesé, terminée ou non — du
+  // raisin réellement hors de la vigne, peu importe l'état de la case à cocher.
+  // "Surface récoltée" / rendement : UNIQUEMENT les parcelles terminées, chacune
+  // comptée une seule fois — une parcelle en cours n'ajoute jamais sa surface
+  // (impossible de savoir quelle fraction correspond à ce qui est déjà pesé), elle
+  // est simplement listée à part par son nom.
+  let totKg = 0, totKgTermine = 0, totSurfTermineAres = 0;
+  const enCours = [];
   CARNET_PARCELLES.forEach(p=>{
-    if(p.kg_recoltes_total){
-      totKg += p.kg_recoltes_total;
-      if(p.surface_cadastrale) totSurfRecolteeAres += p.surface_cadastrale*100;
+    if(!p.kg_recoltes_total) return;
+    totKg += p.kg_recoltes_total;
+    if(p.recolte_complete){
+      totKgTermine += p.kg_recoltes_total;
+      if(p.surface_cadastrale) totSurfTermineAres += p.surface_cadastrale*100;
+    } else {
+      enCours.push(p.nom);
     }
   });
-  const rendement = totSurfRecolteeAres>0 ? Math.round(totKg*100/totSurfRecolteeAres) : null;
+  const rendement = totSurfTermineAres>0 ? Math.round(totKgTermine*100/totSurfTermineAres) : null;
   // Solde en temps réel : plafond autorisé (rendement d'appellation × surface,
-  // stable) moins ce qui a déjà été récolté (toujours à jour, recalculé à chaque
-  // saisie du carnet).
+  // stable) moins TOUT ce qui a déjà été récolté (terminée ou non).
   let soldeCarte;
   if(CARNET_VOLUME_AUTORISE != null){
     const solde = Math.max(0, Math.round(CARNET_VOLUME_AUTORISE - totKg)).toLocaleString('fr-FR')+' kg';
@@ -3644,9 +3656,10 @@ function carnetRenderSynthese(){
    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
     ${soldeCarte}
     <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Poids total</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${Math.round(totKg).toLocaleString('fr-FR')} kg</div></div>
-    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Surface récoltée</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${(Math.round(totSurfRecolteeAres*100)/100).toLocaleString('fr-FR')} a</div></div>
-    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Rendement exploitation</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${rendement!=null?rendement.toLocaleString('fr-FR')+' kg/ha':'—'}</div></div>
-   </div>`;
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Surface vendangée (terminée)</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${(Math.round(totSurfTermineAres*100)/100).toLocaleString('fr-FR')} a</div></div>
+    <div style="background:#fff;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--gr)">Rendement exploitation (provisoire)</div><div style="font-size:19px;font-weight:700;color:var(--gd)">${rendement!=null?rendement.toLocaleString('fr-FR')+' kg/ha':'—'}</div></div>
+   </div>
+   ${enCours.length ? `<div style="font-size:10.5px;color:#8a5a1a;margin-top:8px">En cours : ${enCours.map(n=>n+' - en cours').join(', ')}</div>` : ''}`;
 }
 
 function carnetExportPdfJour(){

@@ -5964,8 +5964,20 @@ def _carnet_donnees_export(client, campagne='2026', date_filtre=None):
     Le rendement affiché est TOUJOURS celui cumulé de la parcelle sur l'ensemble de
     la campagne (jamais celui d'une seule livraison isolée sur la surface totale,
     qui n'a pas de sens) — marqué "provisoire" tant que la parcelle n'est pas
-    cochée terminée. Les totaux d'exploitation (surface récoltée, rendement) ne
-    comptent que les parcelles terminées, chacune une seule fois."""
+    cochée terminée.
+
+    L'encadré de synthèse (surface vendangée, volume récolté, volume restant,
+    rendement d'exploitation) reflète TOUJOURS la situation globale de la campagne
+    à l'instant présent — identique sur l'export journalier et sur l'export total,
+    puisque ce sont des indicateurs d'exploitation, pas des chiffres du jour :
+    - Surface vendangée et rendement : uniquement les parcelles cochées terminées,
+      chacune comptée une seule fois. Une parcelle en cours n'ajoute jamais sa
+      surface (impossible de savoir quelle fraction correspond à ce qui est
+      déjà pesé) — elle est simplement listée à part, par son nom.
+    - Volume récolté : tout ce qui a été réellement pesé, terminée ou non — c'est
+      du raisin physiquement hors de la vigne, peu importe l'état de la case.
+    - Volume restant à récolter : plafond autorisé (rendement d'appellation ×
+      surface totale de l'exploitation) moins le volume récolté ci-dessus."""
     conn = get_db()
     toutes_entrees = dicts_from_rows(conn.execute(
         "SELECT * FROM carnet_vendange WHERE id_client=? AND campagne=? ORDER BY date, id",
@@ -6030,19 +6042,34 @@ def _carnet_donnees_export(client, campagne='2026', date_filtre=None):
                 "rendement": g['rendement_cumule'], "provisoire": not g['terminee'], "note": notes or None,
             })
 
-    conn.close()
-    caisses_total = sum(l['caisses'] or 0 for l in lignes)
-    kg_total = sum(l['poids_total'] or 0 for l in lignes)
+    # Situation globale de la campagne — identique quel que soit le type d'export
+    kg_recolte_total = sum(g['kg_cumule'] for g in groupes.values())
     kg_termine = sum(g['kg_cumule'] for g in groupes.values() if g['terminee'])
     surf_termine = sum(g['surface_ares'] for g in groupes.values() if g['terminee'])
     rendement_exploitation = round(kg_termine * 100 / surf_termine) if surf_termine else None
+    en_cours = sorted(g['noms'] for g in groupes.values() if g['kg_cumule'] and not g['terminee'])
     nb_parcelles_renseignees = len(set(pid for g in groupes.values() if g['kg_cumule'] for pid in g['ids']))
 
+    parametres = conn.execute(
+        "SELECT * FROM parametres_appellation WHERE id_client=? AND campagne=?",
+        (client['id'], campagne)).fetchone()
+    volume_autorise_kg = None
+    if parametres:
+        total_kgha = (parametres['rendement_appellation_kgha'] or 0) + (parametres['depassement_bloque_kgha'] or 0) + (parametres['depassement_vo_kgha'] or 0)
+        surf_totale_ha = sum((p.get('surface_cadastrale') or 0) for p in toutes_parcelles)
+        if total_kgha and surf_totale_ha:
+            volume_autorise_kg = round(total_kgha * surf_totale_ha)
+    volume_restant_kg = max(0, round(volume_autorise_kg - kg_recolte_total)) if volume_autorise_kg is not None else None
+
+    conn.close()
     return {
-        "lignes": lignes, "caisses_total": caisses_total, "kg_total": kg_total,
+        "lignes": lignes,
+        "surface_vendangee_ares": round(surf_termine, 2),
+        "en_cours": en_cours,
+        "volume_recolte_kg": round(kg_recolte_total),
+        "volume_restant_kg": volume_restant_kg,
         "rendement_exploitation": rendement_exploitation,
         "nb_parcelles_renseignees": nb_parcelles_renseignees, "nb_parcelles_total": len(toutes_parcelles),
-        "surface_recoltee_ares": round(surf_termine, 2),
     }
 
 
@@ -6086,21 +6113,22 @@ def _html_pdf_carnet(client, donnees, titre, sous_titre):
   table{{width:100%;border-collapse:collapse;margin-bottom:16px}}
   th{{background:#2D6A4F;color:#fff;padding:6px 8px;font-size:10px;text-align:left}}
   td{{padding:5px 8px;border-bottom:.5px solid #e8e6e1;vertical-align:top}}
-  .resume{{display:flex;gap:16px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:16px;flex-wrap:wrap}}
+  .resume{{display:flex;gap:16px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:8px;flex-wrap:wrap}}
   .resume div{{text-align:center}}
   .resume .val{{font-size:18px;font-weight:700;color:#2D6A4F}}
   .resume .lbl{{font-size:9.5px;color:#666}}
+  .encours{{font-size:10px;color:#8a5a1a;margin-bottom:16px}}
   .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
 <h1>{titre}</h1>
 <p class="sub">{client['exploitation']} · {sous_titre} · Généré le {_date.today().strftime('%d/%m/%Y')} · MatuScore</p>
 <div class="resume">
-  <div><div class="val">{d['caisses_total']:.0f}</div><div class="lbl">Caisses</div></div>
-  <div><div class="val">{d['kg_total']:.0f} kg</div><div class="lbl">Poids total</div></div>
-  <div><div class="val">{d['nb_parcelles_renseignees']}/{d['nb_parcelles_total']}</div><div class="lbl">Parcelles pesées</div></div>
-  <div><div class="val">{d['surface_recoltee_ares']} a</div><div class="lbl">Surface récoltée</div></div>
-  <div><div class="val">{d['rendement_exploitation'] if d['rendement_exploitation'] is not None else '—'} kg/ha</div><div class="lbl">Rendement exploitation</div></div>
+  <div><div class="val">{d['surface_vendangee_ares']} a</div><div class="lbl">Surface vendangée (terminée)</div></div>
+  <div><div class="val">{d['volume_recolte_kg']:.0f} kg</div><div class="lbl">Volume récolté</div></div>
+  <div><div class="val">{(f"{d['volume_restant_kg']:.0f} kg" if d['volume_restant_kg'] is not None else '—')}</div><div class="lbl">Volume restant à récolter</div></div>
+  <div><div class="val">{d['rendement_exploitation'] if d['rendement_exploitation'] is not None else '—'} kg/ha</div><div class="lbl">Rendement exploitation (provisoire)</div></div>
 </div>
+{f'<div class="encours">En cours : ' + ', '.join(n + ' - en cours' for n in d['en_cours']) + '</div>' if d['en_cours'] else ''}
 <table>
   <thead><tr><th>Date</th><th>Parcelle(s)</th><th>Cépage</th><th>Surface</th><th>Caisses</th><th>Poids total</th><th>Poids moyen</th><th>Rendement</th></tr></thead>
   <tbody>{rows_html if rows_html else '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">Aucune saisie</td></tr>'}</tbody>
