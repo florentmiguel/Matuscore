@@ -32,10 +32,15 @@ from modele_epidemio import (
     calc_risque_oidium_journalier, calc_indice_sortie_hiver_oidium, synthese_risque_7j
 )
 
-# Génération des bulletins (le fichier définit build_bulletin/shade sans le
-# underscore — corrigé ici plutôt que de renommer dans le fichier source, pour
-# ne pas casser son usage autonome en ligne de commande).
-from generer_bulletins_v4 import build_bulletin as _build_bulletin, shade as _shade
+# Génération des bulletins et de la traçabilité (le fichier définit ces
+# fonctions sans le underscore — corrigé ici plutôt que de renommer dans le
+# fichier source, pour ne pas casser son usage autonome en ligne de commande).
+# GD/GR (palette de couleurs) sont utilisées par tracabilite_client, qui les
+# référençait par erreur comme GD2/GR2 — des noms qui n'ont jamais existé.
+from generer_bulletins_v4 import (
+    build_bulletin as _build_bulletin, shade as _shade, multi_para as _mp,
+    styled_para as _sp, header_row as _hr, body_cell as _bc, GD, GR
+)
 
 # Word generation
 from docx import Document
@@ -2189,7 +2194,7 @@ def tracabilite_client(cid):
         section.page_width = Cm(29.7); section.page_height = Cm(21.0)
 
     # Titre
-    t = doc.add_table(rows=1, cols=1); c = t.cell(0, 0); _shade(c, GD2)
+    t = doc.add_table(rows=1, cols=1); c = t.cell(0, 0); _shade(c, GD)
     p1 = c.paragraphs[0]; p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r1 = p1.add_run("TABLEAU DE TRAÇABILITÉ DES TRAITEMENTS PHYTOSANITAIRES")
     r1.bold = True; r1.font.size = Pt(14); r1.font.color.rgb = RGBColor.from_string("FFFFFF")
@@ -2199,17 +2204,17 @@ def tracabilite_client(cid):
               {"t": "   Commune : ", "b": True}, client.get("commune", ""),
               {"t": "   Certification : ", "b": True}, client.get("certification", ""),
               {"t": "   Surface : ", "b": True}, f"{client.get('surface', '')} ha"])
-    _sp(doc, f"Campagne {datetime.now().year} — Édité le {datetime.now().strftime('%d/%m/%Y')}", size=9, color=GR2, italic=True)
+    _sp(doc, f"Campagne {datetime.now().year} — Édité le {datetime.now().strftime('%d/%m/%Y')}", size=9, color=GR, italic=True)
     doc.add_paragraph()
 
     if not prescriptions:
-        _sp(doc, "Aucune prescription enregistrée pour cette campagne.", size=11, color=GR2)
+        _sp(doc, "Aucune prescription enregistrée pour cette campagne.", size=11, color=GR)
     else:
         # Tableau principal
         headers = ["Passage", "Cible", "Produit", "Substance active", "Type", "Dose homol.", "Dose prescrite", "Vol.", "Date prévue", "Date réelle", "Appliqué", "Observations"]
         t = doc.add_table(rows=1 + len(prescriptions), cols=len(headers))
         t.style = 'Table Grid'
-        _hr(t, 0, headers, GD2)
+        _hr(t, 0, headers, GD)
         for i, p in enumerate(prescriptions):
             vals = [p.get("passage",""), p.get("cible",""), p.get("nom_produit",""),
                     p.get("substance_active",""), p.get("type_cps",""),
@@ -2250,7 +2255,7 @@ def tracabilite_client(cid):
     # Signature
     doc.add_paragraph()
     doc.add_paragraph()
-    _sp(doc, "Florent Miguel — VITI Sens — Conseil viticole", bold=True, size=10, color=GD2, align=WD_ALIGN_PARAGRAPH.LEFT)
+    _sp(doc, "Florent Miguel — VITI Sens — Conseil viticole", bold=True, size=10, color=GD, align=WD_ALIGN_PARAGRAPH.LEFT)
 
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     safe = client["exploitation"].replace(" ","_").replace(".","").replace("/","-")
