@@ -537,6 +537,27 @@ def init_db():
         "ALTER TABLE parcelles ADD COLUMN derogation_ouverture INTEGER DEFAULT 0",
         "ALTER TABLE maturite_fiches ADD COLUMN est_exemple INTEGER DEFAULT 0",
         "ALTER TABLE rendements ADD COLUMN est_exemple INTEGER DEFAULT 0",
+        # Colonnes présentes dans le CREATE TABLE clients mais jamais couvertes
+        # par une migration — une base plus ancienne (comme celle importée
+        # depuis Railway) peut donc ne pas les avoir, faisant planter la
+        # génération de bulletin (KeyError sur interlocuteur, cu_cumule, etc.).
+        "ALTER TABLE clients ADD COLUMN interlocuteur TEXT",
+        "ALTER TABLE clients ADD COLUMN secteur TEXT",
+        "ALTER TABLE clients ADD COLUMN surface REAL",
+        "ALTER TABLE clients ADD COLUMN pct_chard REAL DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN pct_pn REAL DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN pct_meunier REAL DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN pct_autre REAL DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN certification TEXT DEFAULT 'Conventionnel'",
+        "ALTER TABLE clients ADD COLUMN sencrop TEXT",
+        "ALTER TABLE clients ADD COLUMN id_station TEXT",
+        "ALTER TABLE clients ADD COLUMN parcelles_mildiou TEXT",
+        "ALTER TABLE clients ADD COLUMN parcelles_oidium TEXT",
+        "ALTER TABLE clients ADD COLUMN historique_gel TEXT",
+        "ALTER TABLE clients ADD COLUMN cu_cumule REAL DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN email TEXT",
+        "ALTER TABLE clients ADD COLUMN telephone TEXT",
+        "ALTER TABLE clients ADD COLUMN notes TEXT",
     ]:
         try: conn.execute(alter)
         except: pass
@@ -978,9 +999,9 @@ def get_prescriptions():
     cid = request.args.get('client')
     conn = get_db()
     if cid:
-        rows = conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall()
+        rows = conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM prescriptions ORDER BY id_client, id").fetchall()
+        rows = conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions ORDER BY id_client, id").fetchall()
     conn.close()
     return jsonify(dicts_from_rows(rows))
 
@@ -1259,7 +1280,7 @@ def generer_bulletin(cid):
     if not client:
         conn.close(); return jsonify({"error": "Client non trouvé"}), 404
 
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av_row = conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()
     av = dict_from_row(av_row) if av_row else {}
     suivi_row = conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone()
@@ -1307,7 +1328,7 @@ def generer_tous():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         for client in clients:
-            prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (client['id'],)).fetchall())
+            prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (client['id'],)).fetchall())
             suivi_row = conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (client['id'],)).fetchone()
             suivi = dict_from_row(suivi_row) if suivi_row else None
             client_meteo = fetch_meteo_for_client(client)
@@ -1335,7 +1356,7 @@ def preview_bulletin(cid):
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
     if not client:
         conn.close(); return jsonify({"error": "Client non trouvé"}), 404
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     # Enrich prescriptions with DAR/DRE/ZNT from catalogue
     for p in prescriptions:
         if p.get("id_produit"):
@@ -1727,7 +1748,7 @@ def email_draft(cid):
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
     if not client: conn.close(); return jsonify({"error": "Client non trouvé"}), 404
     if not client.get("email"): conn.close(); return jsonify({"error": "Pas d'email pour ce client"}), 400
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
     conn.close()
@@ -1779,7 +1800,7 @@ def email_draft_tous():
         if not client.get("email"):
             client_files.append((client, None, None, "skip"))
             continue
-        prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (client['id'],)).fetchall())
+        prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (client['id'],)).fetchall())
         suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (client['id'],)).fetchone())
         client_meteo = fetch_meteo_for_client(client)
         doc = _build_bulletin(client, av, prescriptions, suivi, client_meteo)
@@ -2183,7 +2204,7 @@ def tracabilite_client(cid):
     conn = get_db()
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
     if not client: conn.close(); return jsonify({"error": "Client non trouvé"}), 404
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     conn.close()
 
     doc = Document()
@@ -2288,7 +2309,7 @@ def stocker_bulletins():
     for client in clients:
         try:
             cid = client["id"]
-            prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+            prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
             suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
             meteo = fetch_meteo_for_client(client)
             doc = _build_bulletin(client, av, prescriptions, suivi, meteo)
@@ -3118,7 +3139,7 @@ def portail_data_slug(slug):
     if not client: return jsonify({"error": "Lien invalide"}), 404
     cid = client["id"]
     conn = get_db()
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     conn.close()
     # Prochain passage : réutilise le numéro d'un passage annulé si disponible
@@ -3194,7 +3215,7 @@ def portail_bulletin_pdf_slug(slug):
     if not client: return "Accès refusé", 403
     cid = client["id"]
     conn = get_db()
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
     conn.close()
@@ -3215,7 +3236,7 @@ def portail_modifier_prescription_slug(slug):
     j = request.json
     presc_id = j.get("prescription_id"); new_id_produit = j.get("id_produit"); new_dose = j.get("dose_prescrite","")
     conn = get_db()
-    p = conn.execute("SELECT * FROM prescriptions WHERE id=? AND id_client=?", (presc_id, client["id"])).fetchone()
+    p = conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id=? AND id_client=?", (presc_id, client["id"])).fetchone()
     if not p: conn.close(); return jsonify({"error": "Prescription non trouvée"}), 404
     cat = dict_from_row(conn.execute("SELECT * FROM catalogue WHERE id=?", (new_id_produit,)).fetchone())
     if not cat: conn.close(); return jsonify({"error": "Produit non trouvé"}), 404
@@ -3256,7 +3277,7 @@ def portail_data(token):
     if not client:
         conn.close(); return jsonify({"error": "Token invalide"}), 404
     cid = client["id"]
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     conn.close()
 
@@ -3313,7 +3334,7 @@ def portail_modifier_prescription(token):
     presc_id = j.get("prescription_id")
     new_id_produit = j.get("id_produit")
     new_dose = j.get("dose_prescrite", "")
-    p = conn.execute("SELECT * FROM prescriptions WHERE id=? AND id_client=?", (presc_id, client["id"])).fetchone()
+    p = conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id=? AND id_client=?", (presc_id, client["id"])).fetchone()
     if not p: conn.close(); return jsonify({"error": "Prescription non trouvée"}), 404
     cat = dict_from_row(conn.execute("SELECT * FROM catalogue WHERE id=?", (new_id_produit,)).fetchone())
     if not cat: conn.close(); return jsonify({"error": "Produit non trouvé"}), 404
@@ -3471,7 +3492,7 @@ def portail_bulletin_pdf(token):
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
     if not client: conn.close(); return jsonify({"error": "Token invalide"}), 404
     cid = client["id"]
-    prescriptions = dicts_from_rows(conn.execute("SELECT * FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
+    prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
     conn.close()
