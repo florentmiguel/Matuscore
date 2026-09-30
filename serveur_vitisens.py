@@ -32,6 +32,11 @@ from modele_epidemio import (
     calc_risque_oidium_journalier, calc_indice_sortie_hiver_oidium, synthese_risque_7j
 )
 
+# Génération des bulletins (le fichier définit build_bulletin/shade sans le
+# underscore — corrigé ici plutôt que de renommer dans le fichier source, pour
+# ne pas casser son usage autonome en ligne de commande).
+from generer_bulletins_v4 import build_bulletin as _build_bulletin, shade as _shade
+
 # Word generation
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
@@ -1359,7 +1364,7 @@ def preview_bulletin(cid):
             cr = conn3.execute("SELECT concentration_ma FROM catalogue WHERE id=?", (p["id_produit"],)).fetchone()
             if cr and cr[0]: conc = float(cr[0])
         if conc == 0 and nom:
-            cr = conn3.execute("SELECT concentration_ma FROM catalogue WHERE LOWER(nom)=LOWER(?)", (p.get("nom_produit",""))).fetchone()
+            cr = conn3.execute("SELECT concentration_ma FROM catalogue WHERE LOWER(nom)=LOWER(?)", (p.get("nom_produit",""),)).fetchone()
             if cr and cr[0]: conc = float(cr[0])
         ma = dose_val * conc if conc > 0 else 0
         is_cu = "cuivre" in sa or "hydroxyde" in sa or "sulfate" in sa or "oxyde" in sa or "bouillie" in nom or "kocide" in nom or "nordox" in nom
