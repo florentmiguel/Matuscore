@@ -2200,6 +2200,24 @@ def _ovh_sms_send(to_number, message):
 
 @app.route('/api/tracabilite/<cid>', methods=['GET'])
 def tracabilite_client(cid):
+    return _tracabilite_document(cid)
+
+@app.route('/api/portail/<token>/tracabilite')
+def portail_tracabilite_token(token):
+    """Permet au client de générer lui-même son bilan de traçabilité, sans
+    dépendre de Florent pour le lui envoyer — même document que celui de
+    l'onglet Générer côté admin, réutilise exactement le même code."""
+    client = dict_from_row(get_db().execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _tracabilite_document(client['id'])
+
+@app.route('/api/portail-s/<slug>/tracabilite')
+def portail_tracabilite_slug(slug):
+    client = get_client_by_token_or_slug(slug)
+    if not client: return jsonify({"error": "Lien invalide"}), 404
+    return _tracabilite_document(client['id'])
+
+def _tracabilite_document(cid):
     """Génère un tableau de traçabilité des traitements pour un client"""
     conn = get_db()
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
@@ -2757,7 +2775,7 @@ def _compte_statut(client):
 def _creer_session_stripe(client, return_path):
     _, price_id = _prix_client(client)
     if not stripe or not STRIPE_SECRET_KEY or not price_id:
-        return jsonify({"error": "Le paiement n'est pas encore configuré. Contactez le support Grappe'Book."}), 500
+        return jsonify({"error": "Le paiement n'est pas encore configuré. Contactez le support Pilot by VITI Sens."}), 500
     try:
         checkout = stripe.checkout.Session.create(
             mode='subscription',
@@ -2824,15 +2842,15 @@ def api_inscription():
                  if prix_msg == PRIX_LANCEMENT else
                  f"Passez à l'accès complet à tout moment pour {prix_msg}.")
 
-    send_email_auto(email, "Bienvenue sur Grappe'Book 🍇", f"""
+    send_email_auto(email, "Bienvenue sur Pilot by VITI Sens 🍇", f"""
         <p>Bonjour,</p>
-        <p>Votre compte <strong>{exploitation}</strong> est créé sur Grappe'Book.</p>
+        <p>Votre compte <strong>{exploitation}</strong> est créé sur Pilot by VITI Sens.</p>
         <p>Vous pouvez y accéder à tout moment ici : <a href="{DOMAIN}/connexion">{DOMAIN}/connexion</a></p>
         <p>Votre essai gratuit de {LIMITE_JOURS_ESSAI} jours vous donne accès à toutes les fonctionnalités
         (parcelles, maturité, rendements), sauf l'itinéraire de récolte et les exports PDF/CSV.
         Vous pouvez aussi charger des données d'exemple pour découvrir l'appli tout de suite.
         {offre_txt}</p>
-        <p>À bientôt,<br>Florent — Grappe'Book (VITI Sens)</p>
+        <p>À bientôt,<br>Florent — Pilot by VITI Sens</p>
     """)
 
     return jsonify({"status": "ok", "redirect": f"/portail/{token}"})
@@ -2844,7 +2862,7 @@ def page_connexion():
 
 
 def _get_client_by_email(email):
-    """Certaines fiches client (créées avant Grappe'Book) ont plusieurs adresses dans
+    """Certaines fiches client (créées avant Pilot by VITI Sens) ont plusieurs adresses dans
     le même champ, séparées par ';' — n'importe laquelle doit être reconnue, pas
     seulement une correspondance exacte du champ entier."""
     email = (email or '').strip().lower()
@@ -2894,14 +2912,14 @@ def api_mdp_oublie():
         lien = f"{DOMAIN}/reinitialiser-mot-de-passe?token={token}"
         # Envoyer à l'adresse SAISIE par la personne (pas au champ email complet,
         # qui peut contenir plusieurs adresses séparées par ';')
-        send_email_auto(email_saisi, "Réinitialiser votre mot de passe Grappe'Book 🍇", f"""
+        send_email_auto(email_saisi, "Réinitialiser votre mot de passe Pilot by VITI Sens 🍇", f"""
             <p>Bonjour,</p>
             <p>Une demande de réinitialisation de mot de passe a été faite pour le compte
-            <strong>{client['exploitation']}</strong> sur Grappe'Book.</p>
+            <strong>{client['exploitation']}</strong> sur Pilot by VITI Sens.</p>
             <p><a href="{lien}">Cliquez ici pour choisir un nouveau mot de passe</a></p>
             <p style="font-size:12px;color:#888">Ce lien expire dans 1 heure. Si vous n'êtes pas à
             l'origine de cette demande, ignorez cet email — rien ne change.</p>
-            <p>À bientôt,<br>Florent — Grappe'Book (VITI Sens)</p>
+            <p>À bientôt,<br>Florent — Pilot by VITI Sens</p>
         """)
     return jsonify(reponse)
 
@@ -2963,10 +2981,10 @@ def mon_espace():
         return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-title" content="Grappe'Book Admin">
+        <meta name="apple-mobile-web-app-title" content="Pilot Admin">
         <link rel="manifest" href="/manifest.json?start=/mon-espace">
         <link rel="apple-touch-icon" href="/icon-180.png">
-        <title>Grappe'Book — Mes clients</title>
+        <title>Pilot by VITI Sens — Mes clients</title>
         <style>body{{font-family:-apple-system,sans-serif;margin:0;background:#f8faf8}}
         .header{{background:#2D6A4F;color:#fff;padding:20px;font-weight:700;font-size:16px}}</style>
         </head><body>
@@ -5160,7 +5178,7 @@ def _export_rendements_pdf(client):
  .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
 <h1>Suivi des rendements — Exploitation 2026</h1>
-<p class="sub">{client['exploitation']} · Généré le {date.today().strftime('%d/%m/%Y')} · Grappe'Book</p>
+<p class="sub">{client['exploitation']} · Généré le {date.today().strftime('%d/%m/%Y')} · Pilot by VITI Sens</p>
 <div class="resume">
  <div><div class="val">{len(synthese)}</div><div class="lbl">Parcelles</div></div>
  <div><div class="val">{round(total_surface_ha*100,1)} a</div><div class="lbl">Surface totale</div></div>
@@ -5176,7 +5194,7 @@ def _export_rendements_pdf(client):
  </tr></thead>
  <tbody>{rows_html}</tbody>
 </table>
-<p class="footer">Grappe'Book — by VITI Sens Conseil viticole — Document indicatif.</p>
+<p class="footer">Pilot by VITI Sens — Conseil viticole — Document indicatif.</p>
 </body></html>"""
 
     try:
@@ -5232,7 +5250,7 @@ def _export_rendements_pdf(client):
  .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
 <h1>Suivi des rendements — Exploitation 2026</h1>
-<p class="sub">{client['exploitation']} · Généré le {date.today().strftime('%d/%m/%Y')} · Grappe'Book</p>
+<p class="sub">{client['exploitation']} · Généré le {date.today().strftime('%d/%m/%Y')} · Pilot by VITI Sens</p>
 <div class="resume">
  <div><div class="val">{len(synthese)}</div><div class="lbl">Parcelles</div></div>
  <div><div class="val">{total_surface:.2f} ha</div><div class="lbl">Surface totale</div></div>
@@ -5247,7 +5265,7 @@ def _export_rendements_pdf(client):
  </tr></thead>
  <tbody>{rows_html}</tbody>
 </table>
-<p class="footer">Grappe'Book — by VITI Sens Conseil viticole — Document indicatif.</p>
+<p class="footer">Pilot by VITI Sens — Conseil viticole — Document indicatif.</p>
 </body></html>"""
 
     try:
@@ -5496,7 +5514,7 @@ def _html_pdf_exploitation(client, fiches, score_moyen, nb_parcelles=None):
   .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
 <h1>Suivi de maturité — Exploitation 2026</h1>
-<p class="sub">{client['exploitation']} · Généré le {date.today().strftime('%d/%m/%Y')} · Grappe'Book</p>
+<p class="sub">{client['exploitation']} · Généré le {date.today().strftime('%d/%m/%Y')} · Pilot by VITI Sens</p>
 <div class="resume">
   <div><div class="val">{nb_parcelles}</div><div class="lbl">Parcelles</div></div>
   <div><div class="val">{score_moyen}/100</div><div class="lbl">Score moyen</div></div>
@@ -5510,7 +5528,7 @@ def _html_pdf_exploitation(client, fiches, score_moyen, nb_parcelles=None):
   </tr></thead>
   <tbody>{rows_html}</tbody>
 </table>
-<p class="footer">Grappe'Book — by VITI Sens Conseil viticole — Document indicatif.</p>
+<p class="footer">Pilot by VITI Sens — Conseil viticole — Document indicatif.</p>
 </body></html>"""
 
 
@@ -5702,7 +5720,7 @@ def _export_itineraire_pdf(client):
  .footer{{color:#999;font-size:9px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
 <h1>Itinéraire de vendange 2026 — {client['exploitation']}</h1>
-<p class="sub">Généré le {date.today().strftime('%d/%m/%Y')} · Grappe'Book</p>
+<p class="sub">Généré le {date.today().strftime('%d/%m/%Y')} · Pilot by VITI Sens</p>
 <div class="resume">
  <div><div class="val">{total_kg:,} kg</div><div class="lbl">Volume total</div></div>
  <div><div class="val">{nb_jours} j</div><div class="lbl">Durée</div></div>
@@ -5715,7 +5733,7 @@ def _export_itineraire_pdf(client):
  </tr></thead>
  <tbody>{rows_html}</tbody>
 </table>
-<p class="footer">Grappe'Book · by VITI Sens · Document indicatif</p>
+<p class="footer">Pilot by VITI Sens · Document indicatif</p>
 </body></html>"""
 
     try:
@@ -6152,7 +6170,7 @@ def _html_pdf_carnet(client, donnees, titre, sous_titre):
   .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
 <h1>{titre}</h1>
-<p class="sub">{client['exploitation']} · {sous_titre} · Généré le {_date.today().strftime('%d/%m/%Y')} · Grappe'Book</p>
+<p class="sub">{client['exploitation']} · {sous_titre} · Généré le {_date.today().strftime('%d/%m/%Y')} · Pilot by VITI Sens</p>
 <div class="resume">
   <div><div class="val">{d['surface_vendangee_ares']} a</div><div class="lbl">Surface vendangée (terminée)</div></div>
   <div><div class="val">{d['volume_recolte_kg']:.0f} kg</div><div class="lbl">Volume récolté</div></div>
@@ -6164,7 +6182,7 @@ def _html_pdf_carnet(client, donnees, titre, sous_titre):
   <thead><tr><th>Date</th><th>Parcelle(s)</th><th>Cépage</th><th>Surface</th><th>Caisses</th><th>Poids total</th><th>Poids moyen</th><th>Rendement</th></tr></thead>
   <tbody>{rows_html if rows_html else '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">Aucune saisie</td></tr>'}</tbody>
 </table>
-<div class="footer">Carnet de vendange — VITI Sens / Grappe'Book</div>
+<div class="footer">Carnet de vendange — Pilot by VITI Sens</div>
 </body></html>"""
 
 
@@ -7241,7 +7259,7 @@ def page_admin_dates_ouverture():
 def page_admin_upload_db():
     return """<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grappe'Book — Import base de données</title>
+    <title>Pilot by VITI Sens — Import base de données</title>
     <style>
     body{font-family:-apple-system,sans-serif;background:#f8faf8;display:flex;align-items:center;
     justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box}
@@ -7375,9 +7393,9 @@ init_db()
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("  🍇 VITI Sens — Serveur local (admin + Grappe'Book)")
+    print("  🍇 VITI Sens — Serveur local (admin + Pilot)")
     print("="*60)
-    print(f"  Grappe'Book — inscription publique : http://localhost:5000/inscription")
+    print(f"  Pilot by VITI Sens — inscription publique : http://localhost:5000/inscription")
     print(f"  Dashboard admin (VITI Sens) : http://localhost:5000/admin-vitisens")
     if not ADMIN_PASSWORD:
         print("  ⚠️  ADMIN_PASSWORD non défini — l'espace admin n'est PAS protégé.")

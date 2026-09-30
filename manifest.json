@@ -1,6 +1,6 @@
 {
-  "name": "Grappe'Book — by VITI Sens",
-  "short_name": "Grappe'Book",
+  "name": "Pilot by VITI Sens",
+  "short_name": "Pilot",
   "description": "Suivi de maturité et itinéraire de récolte pour vignerons champenois",
   "start_url": "/mon-espace",
   "display": "standalone",

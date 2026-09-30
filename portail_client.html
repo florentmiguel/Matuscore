@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Grappe'Book">
+<meta name="apple-mobile-web-app-title" content="Pilot by VITI Sens">
 <meta name="theme-color" content="#2D6A4F">
 <link rel="manifest" href="/manifest.json" id="pwa-manifest">
 <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<title>Grappe'Book — Portail Client</title>
+<title>Pilot by VITI Sens — Portail Client</title>
 <script>
 // "Ajouter à l'écran d'accueil" doit toujours rouvrir CE lien précis (le lien direct
 // du client), pas une page générique qui suppose une connexion par mot de passe.
@@ -89,12 +89,12 @@ textarea{min-height:60px}
 </head>
 <body>
 <div class="header">
- <h1>🍇 Grappe'Book</h1>
+ <h1>🍇 Pilot by VITI Sens</h1>
  <div class="sub" id="clientName">Chargement...</div>
 </div>
 <div class="tabs">
  <button class="tab act" id="mega-tab-phyto" onclick="showMegaTab('phyto')" style="display:none">🌿 PhytoScope</button>
- <button class="tab" id="mega-tab-vendanges" onclick="showMegaTab('vendanges')">🍇 Vendanges</button>
+ <button class="tab" id="mega-tab-vendanges" onclick="showMegaTab('vendanges')">🍇 MatuScope</button>
 </div>
 <div class="content">
  <datalist id="cep-liste-globale">
@@ -157,6 +157,11 @@ textarea{min-height:60px}
 
  <!-- DOCUMENTS -->
  <div class="section" id="sec-documents">
+  <div class="card">
+   <h3>🧾 Mon bilan de traçabilité</h3>
+   <p style="font-size:11px;color:var(--gr);margin-bottom:12px">Tableau récapitulatif de tous vos traitements de la campagne (cumuls cuivre et Folpel inclus) — générez-le vous-même à tout moment, sans attendre votre conseiller.</p>
+   <button class="btn btn-outline" onclick="telechargerTracabilite()">⬇️ Télécharger mon bilan (PDF)</button>
+  </div>
   <div class="card">
    <h3>📎 Documents disponibles</h3>
    <p style="font-size:11px;color:var(--gr);margin-bottom:12px">Notes techniques, fiches produits, réglementation et autres documents partagés par votre conseiller.</p>
@@ -733,7 +738,7 @@ async function loadData(){
   renderHistorique();
   renderDocuments();
   // Onglet Protection (bulletin conseil, météo, traitements...) réservé aux clients
-  // que Florent gère lui-même depuis son admin — jamais aux comptes Grappe'Book
+  // que Florent gère lui-même depuis son admin — jamais aux comptes Pilot by VITI Sens
   // (inscription publique), qui n'ont que la partie Vendanges.
   const estClientConseil = DATA.client.origine !== 'inscription';
   const tabPhyto = document.getElementById('mega-tab-phyto');
@@ -3665,6 +3670,9 @@ function carnetRenderSynthese(){
 function carnetExportPdfJour(){
   const date = document.getElementById('carnet-date').value;
   window.open(`${API_BASE}/carnet-vendange/export-pdf?date=${date}`, '_blank');
+}
+function telechargerTracabilite(){
+  window.open(`${API_BASE}/tracabilite`, '_blank');
 }
 function carnetExportPdfTotal(){
   window.open(`${API_BASE}/carnet-vendange/export-pdf-total`, '_blank');
