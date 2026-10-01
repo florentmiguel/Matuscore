@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Pilot by VITI Sens">
-<meta name="theme-color" content="#1E3A2A">
+<meta name="theme-color" content="#132F21">
 <link rel="manifest" href="/manifest.json" id="pwa-manifest">
 <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
@@ -18,10 +18,10 @@
 document.getElementById('pwa-manifest').href = '/manifest.json?start=' + encodeURIComponent(window.location.pathname);
 </script>
 <style>
-:root{--gd:#2D6A4F;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--or:#E76F51;--rd:#C1121F;--bl:#2196F3;--gr:#6B7280;--bg:#f8faf8}
+:root{--gd:#132F21;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--or:#E76F51;--rd:#C1121F;--bl:#2196F3;--gr:#6B7280;--bg:#f8faf8}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:#1f2937;font-size:14px;padding-bottom:80px}
-.header{background:#1E3A2A;color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:10}
+.header{background:#132F21;color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:10}
 .header h1{font-size:18px;margin-bottom:2px}
 .header .sub{font-size:11px;opacity:.8}
 .tabs{display:flex;background:#fff;border-bottom:2px solid var(--gl);overflow-x:auto;position:sticky;top:56px;z-index:9}
@@ -513,8 +513,8 @@ textarea{min-height:60px}
     <div style="font-size:13px;font-weight:600;color:#664d03;margin-bottom:4px">Itinéraire réservé à l'accès complet</div>
     <div style="font-size:11px;color:#664d03;margin-bottom:10px">Consultez vos parcelles et votre maturité librement pendant l'essai — le calcul d'itinéraire et les exports s'activent avec l'accès complet.</div>
     <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-     <button onclick="itinAfficherExemple()" style="background:#fff;color:#2D6A4F;border:1px solid var(--gl);border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">👀 Voir un exemple</button>
-     <button onclick="lancerUpgrade()" style="background:#2D6A4F;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">Passer à l'accès complet</button>
+     <button onclick="itinAfficherExemple()" style="background:#fff;color:#132F21;border:1px solid var(--gl);border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">👀 Voir un exemple</button>
+     <button onclick="lancerUpgrade()" style="background:#132F21;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">Passer à l'accès complet</button>
     </div>
    </div>
    <input type="hidden" id="itin-kg">
@@ -670,9 +670,9 @@ var DATA = null;
     div.style = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
     div.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;max-width:380px;text-align:center;font-family:inherit">
       <div style="font-size:32px;margin-bottom:6px">${estFonctionPremium?'🔒':'⏳'}</div>
-      <h3 style="color:#2D6A4F;margin:0 0 10px">${estFonctionPremium?"Fonction réservée à l'accès complet":'Essai gratuit terminé'}</h3>
+      <h3 style="color:#132F21;margin:0 0 10px">${estFonctionPremium?"Fonction réservée à l'accès complet":'Essai gratuit terminé'}</h3>
       <p style="font-size:14px;color:#444;margin-bottom:18px;line-height:1.4">${message||''}</p>
-      <button onclick="lancerUpgrade()" style="background:#2D6A4F;color:#fff;border:none;border-radius:8px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;width:100%;margin-bottom:8px">Passer à l'accès complet</button>
+      <button onclick="lancerUpgrade()" style="background:#132F21;color:#fff;border:none;border-radius:8px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;width:100%;margin-bottom:8px">Passer à l'accès complet</button>
       <button onclick="document.getElementById('modalUpgrade').remove()" style="background:none;border:none;color:#888;font-size:13px;cursor:pointer">Plus tard</button>
     </div>`;
     document.body.appendChild(div);
@@ -700,7 +700,7 @@ async function chargerBanniereEssai(){
         : `🍇 Essai gratuit — ${d.jours_restants} jour${d.jours_restants>1?'s':''} restant${d.jours_restants>1?'s':''} (itinéraire et exports non inclus)`;
       b.style = `background:${expire?'#FFEBEE':'#FFF3CD'};color:${expire?'#C1121F':'#664d03'};padding:8px 14px;font-size:12.5px;text-align:center;border-bottom:1px solid ${expire?'#f0c4c4':'#ffe69c'};display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:50`;
       b.innerHTML = `<span>${txt}</span>
-        <button onclick="lancerUpgrade()" style="background:#2D6A4F;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600">${d.offre_lancement?`🎉 Offre de lancement — ${d.prix}`:`Accès complet — ${d.prix}`}</button>`;
+        <button onclick="lancerUpgrade()" style="background:#132F21;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600">${d.offre_lancement?`🎉 Offre de lancement — ${d.prix}`:`Accès complet — ${d.prix}`}</button>`;
       document.body.prepend(b);
     }
   }catch(e){}
@@ -905,8 +905,8 @@ function _buildCalendar(year, month){
   const dow = (firstMon + d - 1) % 7;
   const isWe = dow >= 5;
   let style = `text-align:center;padding:6px 2px;font-size:12px;border-radius:6px;cursor:${isFuture?'default':'pointer'};margin:1px;line-height:1.4;`;
-  if(isSel) style += 'background:#2D6A4F;color:#fff;font-weight:500;';
-  else if(isToday) style += 'border:1.5px solid #2D6A4F;color:#2D6A4F;font-weight:500;';
+  if(isSel) style += 'background:#132F21;color:#fff;font-weight:500;';
+  else if(isToday) style += 'border:1.5px solid #132F21;color:#132F21;font-weight:500;';
   else if(isFuture) style += 'color:#ccc;';
   else if(isWe) style += 'color:var(--gr);';
   else style += 'color:var(--gd-text,#1f2937);';
@@ -1378,7 +1378,7 @@ function renderGraphMatu(){
   if(!byParcelle[key])byParcelle[key]={nom:f.parcelle_nom,pts:[]};
   byParcelle[key].pts.push({x:f.date_fiche,y:f.degre_probable});
  });
- const colors=['#2D6A4F','#E76F51','#2196F3','#9C27B0','#FF9800'];
+ const colors=['#132F21','#E76F51','#2196F3','#9C27B0','#FF9800'];
  const datasets=Object.values(byParcelle).map((d,i)=>({
   label:d.nom,data:d.pts,borderColor:colors[i%colors.length],
   backgroundColor:'transparent',tension:.3,pointRadius:4
@@ -2012,7 +2012,7 @@ async function matuLoadExploit(){
  }catch(e){ console.error('exploit',e); }
 }
 
-const GRAPH_COLORS = ['#2D6A4F','#C1121F','#1565C0','#9C27B0','#E76F51','#FF8C00','#009688','#795548'];
+const GRAPH_COLORS = ['#132F21','#C1121F','#1565C0','#9C27B0','#E76F51','#FF8C00','#009688','#795548'];
 const CEP_DASH     = {'Chardonnay':[],'Pinot Noir':[8,4],'Meunier':[2,5]};
 const CEP_POINT    = {'Chardonnay':'circle','Pinot Noir':'rect','Meunier':'triangle'};
 
@@ -2046,8 +2046,8 @@ function matuRenderExploitGraph(series){
     legend:{display:false},
     tooltip:{callbacks:{label:i=>i.dataset.label+' : '+i.raw.toFixed(2)+'% vol.'}},
     annotation:{annotations:{
-     l102:{type:'line',yMin:10.2,yMax:10.2,borderColor:'#2D6A4F',borderWidth:1.5,borderDash:[8,4],
-           label:{display:true,content:'10.2%',position:'end',font:{size:10},color:'#2D6A4F',backgroundColor:'transparent'}},
+     l102:{type:'line',yMin:10.2,yMax:10.2,borderColor:'#132F21',borderWidth:1.5,borderDash:[8,4],
+           label:{display:true,content:'10.2%',position:'end',font:{size:10},color:'#132F21',backgroundColor:'transparent'}},
      l105:{type:'line',yMin:10.5,yMax:10.5,borderColor:'#1B4332',borderWidth:1.5,borderDash:[8,4],
            label:{display:true,content:'10.5%',position:'end',font:{size:10},color:'#1B4332',backgroundColor:'transparent'}}
     }}
@@ -2265,7 +2265,7 @@ function matuRenderGraph(d){
 
  const datasets = [{
   label: 'Degré probable (% vol.)',
-  data: dataD, borderColor: '#2D6A4F', backgroundColor: 'rgba(45,106,79,.1)',
+  data: dataD, borderColor: '#132F21', backgroundColor: 'rgba(45,106,79,.1)',
   tension: .3, pointRadius: 5, pointHoverRadius: 7,
   yAxisID: 'yD', fill: false
  }];
@@ -2319,7 +2319,7 @@ function matuRenderFenetre(d){
  // Carte 10.2%
  h += '<div style="background:var(--gbg);border-radius:8px;padding:10px;border-left:3px solid #40916C">';
  h += '<div style="font-size:10px;color:var(--gr);margin-bottom:2px">Début fenêtre</div>';
- h += '<div style="font-size:11px;font-weight:700;color:#2D6A4F">10.2% vol.</div>';
+ h += '<div style="font-size:11px;font-weight:700;color:#132F21">10.2% vol.</div>';
  h += '<div style="font-size:13px;font-weight:600;margin-top:3px">'+(f.date_102?fmtD(f.date_102):'Déjà atteint')+'</div>';
  h += f.jours_102 !== null && f.jours_102 > 0 ? '<div style="font-size:11px;color:var(--gr)">dans '+Math.ceil(f.jours_102)+' jour(s)</div>' : '';
  h += f.at_a_102 !== null ? '<div style="font-size:11px;color:var(--or);margin-top:3px">AT estimée : '+f.at_a_102+' g/L</div>' : '';
@@ -2328,7 +2328,7 @@ function matuRenderFenetre(d){
  // Carte 10.5%
  h += '<div style="background:var(--gbg);border-radius:8px;padding:10px;border-left:3px solid #1B4332">';
  h += '<div style="font-size:10px;color:var(--gr);margin-bottom:2px">Fin fenêtre</div>';
- h += '<div style="font-size:11px;font-weight:700;color:#2D6A4F">10.5% vol.</div>';
+ h += '<div style="font-size:11px;font-weight:700;color:#132F21">10.5% vol.</div>';
  h += '<div style="font-size:13px;font-weight:600;margin-top:3px">'+(f.date_105?fmtD(f.date_105):'Déjà atteint')+'</div>';
  h += f.jours_105 !== null && f.jours_105 > 0 ? '<div style="font-size:11px;color:var(--gr)">dans '+Math.ceil(f.jours_105)+' jour(s)</div>' : '';
  h += f.at_a_105 !== null ? '<div style="font-size:11px;color:var(--or);margin-top:3px">AT estimée : '+f.at_a_105+' g/L</div>' : '';
@@ -2494,7 +2494,7 @@ async function gestionResetCampagne(){
   const s={maturite:n_matu, rendements:n_rdt};
   const t=document.createElement('div');
   t.textContent=`✅ Archivé & remis à zéro : ${s.maturite||0} fiche(s) maturité, ${s.rendements||0} relevé(s) supprimés`;
-  t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2D6A4F;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:200;max-width:90vw;text-align:center';
+  t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#132F21;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:200;max-width:90vw;text-align:center';
   document.body.appendChild(t); setTimeout(()=>t.remove(),5000);
   if(typeof rdtInit==='function') rdtInit();
   if(typeof matuInit==='function') matuInit();
@@ -2878,15 +2878,15 @@ async function rdtLoadExploit(){
    const prov = !toutVendange;
    const rdtStr = rdtReelExploit ? rdtReelExploit.toLocaleString('fr-FR')+' kg/ha' : '—';
    const kgStr  = totalKgReels ? totalKgReels.toLocaleString('fr-FR')+' kg récoltés' : '';
-   h += `<div style="border:.5px solid ${prov?'#E65100':'#2D6A4F'};border-radius:8px;padding:10px 14px;margin-bottom:12px;background:${prov?'#FFF3E0':'#E8F5E9'}">
+   h += `<div style="border:.5px solid ${prov?'#E65100':'#132F21'};border-radius:8px;padding:10px 14px;margin-bottom:12px;background:${prov?'#FFF3E0':'#E8F5E9'}">
     <div style="display:flex;justify-content:space-between;align-items:center">
      <div>
-      <div style="font-size:11px;font-weight:600;color:${prov?'#E65100':'#2D6A4F'};text-transform:uppercase;letter-spacing:.04em">
+      <div style="font-size:11px;font-weight:600;color:${prov?'#E65100':'#132F21'};text-transform:uppercase;letter-spacing:.04em">
        Rendement réel exploitation${prov?' — Provisoire':''}
       </div>
       <div style="font-size:10px;color:var(--gr);margin-top:2px">${kgStr}${totalSurfHA>0?' sur '+Math.round(totalSurfHA*100)+' ares':''}</div>
      </div>
-     <div style="font-size:24px;font-weight:700;color:${prov?'#E65100':'#2D6A4F'}">${rdtStr}</div>
+     <div style="font-size:24px;font-weight:700;color:${prov?'#E65100':'#132F21'}">${rdtStr}</div>
     </div>
    </div>`;
   }
@@ -3135,7 +3135,7 @@ async function itinAfficherExemple(){
     const d = await r.json();
     prixTxt = d.offre_lancement ? `🎉 offre de lancement — ${d.prix}` : `accès complet — ${d.prix}`;
   }catch(e){}
-  let h = `<div style="background:#EAF3DE;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#2D6A4F">
+  let h = `<div style="background:#EAF3DE;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#132F21">
     👀 <strong>Exemple</strong> — aperçu non interactif calculé sur un jeu de données de démonstration (12 parcelles). Vos vrais résultats dépendront de vos parcelles et de leur maturité.
   </div>`;
   EXEMPLE_ITINERAIRE_JOURS.forEach(j=>{
@@ -5317,7 +5317,7 @@ async function _validerModalRecolte(date, parcelleId, p){
   }catch(e){console.error(e);}
   const t=document.createElement('div');
   t.textContent=`✓ ${p.nom} — ${kg.toLocaleString('fr-FR')} kg ${remplace?'(total corrigé)':'enregistrés'}`;
-  t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2D6A4F;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;z-index:9999';
+  t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#132F21;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;z-index:9999';
   document.body.appendChild(t);setTimeout(()=>t.remove(),3000);
  }
  closeModal();
@@ -5741,7 +5741,7 @@ async function itinSaisirRecolte(ji,pi,date,p){
    // Toast léger
    const t=document.createElement('div');
    t.textContent=`✓ ${p.nom} — ${kg.toLocaleString('fr-FR')} kg enregistrés`;
-   t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2D6A4F;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;z-index:200';
+   t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#132F21;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;z-index:200';
    document.body.appendChild(t);setTimeout(()=>t.remove(),3000);
   }else alert(d.error||'Erreur');
  }catch(e){alert('Erreur : '+e.message);}

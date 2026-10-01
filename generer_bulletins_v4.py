@@ -33,7 +33,7 @@ except ImportError:
 COORDS = {"lat": 49.25, "lon": 3.96}
 TODAY = datetime.now().strftime("%d/%m/%Y")
 
-GD="2D6A4F"; GM="40916C"; GL="B7E4C7"; GBG="F0F7F0"
+GD="132F21"; GM="40916C"; GL="B7E4C7"; GBG="F0F7F0"
 OR="E76F51"; OBG="FFF3E0"; RD="C1121F"; RBG="FFE0E0"
 BL="2196F3"; BBG="E3F2FD"; GR="6B7280"; YBG="FFFDE7"
 WH="FFFFFF"; BK="333333"

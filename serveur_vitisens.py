@@ -177,9 +177,9 @@ _ADMIN_LOGIN_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8
 body{font-family:-apple-system,sans-serif;background:#f8faf8;display:flex;align-items:center;
 justify-content:center;min-height:100vh;margin:0}
 .card{background:#fff;border-radius:12px;padding:28px;box-shadow:0 1px 3px rgba(0,0,0,.1);width:100%;max-width:340px}
-h1{font-size:18px;color:#2D6A4F;margin-bottom:18px;text-align:center}
+h1{font-size:18px;color:#132F21;margin-bottom:18px;text-align:center}
 input{width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box}
-button{width:100%;padding:12px;border:none;border-radius:8px;background:#2D6A4F;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+button{width:100%;padding:12px;border:none;border-radius:8px;background:#132F21;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
 .err{color:#C1121F;font-size:13px;margin-top:10px;text-align:center}
 </style></head><body>
 <div class="card">
@@ -2986,7 +2986,7 @@ def mon_espace():
         <link rel="apple-touch-icon" href="/icon-180.png">
         <title>Pilot by VITI Sens — Mes clients</title>
         <style>body{{font-family:-apple-system,sans-serif;margin:0;background:#f8faf8}}
-        .header{{background:#2D6A4F;color:#fff;padding:20px;font-weight:700;font-size:16px}}</style>
+        .header{{background:#132F21;color:#fff;padding:20px;font-weight:700;font-size:16px}}</style>
         </head><body>
         <div class="header">🍇 Mes clients ({len(clients)})</div>
         {items}
@@ -5130,7 +5130,7 @@ def _export_rendements_pdf(client):
     for r in rows:
         if r.get('commune') != current_com:
             current_com = r.get('commune','')
-            rows_html += f'<tr><td colspan="9" style="background:#EAF3DE;font-weight:700;font-size:11px;padding:5px 8px;color:#2D6A4F">{current_com}</td></tr>'
+            rows_html += f'<tr><td colspan="9" style="background:#EAF3DE;font-weight:700;font-size:11px;padding:5px 8px;color:#132F21">{current_com}</td></tr>'
         rdt      = r.get('rendement_kgha')
         rdt_reel = r.get('rendement_reel_kgha')
         surf_ha  = float(r.get('surface_cadastrale') or 0)
@@ -5159,20 +5159,20 @@ def _export_rendements_pdf(client):
     rdt_reel_resume = ''
     if rdt_reel_exploit:
         prov_str = ' (provisoire)' if not tout_vendange else ''
-        rdt_reel_resume = f'<div><div class="val" style="color:{"#E65100" if not tout_vendange else "#2D6A4F"}">{rdt_reel_exploit:,} kg/ha</div><div class="lbl">Rdt réel{prov_str}</div></div>'
+        rdt_reel_resume = f'<div><div class="val" style="color:{"#E65100" if not tout_vendange else "#132F21"}">{rdt_reel_exploit:,} kg/ha</div><div class="lbl">Rdt réel{prov_str}</div></div>'
 
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
  body{{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#1a1a1a}}
- h1{{color:#2D6A4F;font-size:18px;margin-bottom:4px}}
+ h1{{color:#132F21;font-size:18px;margin-bottom:4px}}
  .sub{{color:#666;font-size:11px;margin-bottom:16px}}
  table{{width:100%;border-collapse:collapse;margin-bottom:16px}}
- th{{background:#2D6A4F;color:#fff;padding:7px 8px;font-size:10px;text-align:left}}
+ th{{background:#132F21;color:#fff;padding:7px 8px;font-size:10px;text-align:left}}
  td{{padding:6px 8px;border-bottom:.5px solid #e8e6e1;vertical-align:top;font-size:11px}}
  tr:nth-child(even) td{{background:#f9f8f6}}
  .resume{{display:flex;gap:20px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:12px;flex-wrap:wrap}}
  .resume div{{text-align:center;min-width:80px}}
- .resume .val{{font-size:18px;font-weight:700;color:#2D6A4F}}
+ .resume .val{{font-size:18px;font-weight:700;color:#132F21}}
  .resume .lbl{{font-size:10px;color:#666}}
  .legende{{font-size:10px;color:#666;margin-bottom:12px}}
  .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
@@ -5214,7 +5214,7 @@ def _export_rendements_pdf(client):
     for r in rows:
         if r.get('commune') != current_com:
             current_com = r.get('commune','')
-            rows_html += f'<tr><td colspan="7" style="background:#EAF3DE;font-weight:700;font-size:11px;padding:5px 8px;color:#2D6A4F">{current_com}</td></tr>'
+            rows_html += f'<tr><td colspan="7" style="background:#EAF3DE;font-weight:700;font-size:11px;padding:5px 8px;color:#132F21">{current_com}</td></tr>'
         rdt = r.get('rendement_kgha')
         rdt_reel = r.get('rendement_reel_kgha')
         rdt_col = "#2E7D32" if rdt and rdt < 10000 else "#E65100" if rdt else "#666"
@@ -5237,15 +5237,15 @@ def _export_rendements_pdf(client):
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
  body{{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#1a1a1a}}
- h1{{color:#2D6A4F;font-size:18px;margin-bottom:4px}}
+ h1{{color:#132F21;font-size:18px;margin-bottom:4px}}
  .sub{{color:#666;font-size:11px;margin-bottom:16px}}
  table{{width:100%;border-collapse:collapse;margin-bottom:16px}}
- th{{background:#2D6A4F;color:#fff;padding:7px 8px;font-size:10px;text-align:left}}
+ th{{background:#132F21;color:#fff;padding:7px 8px;font-size:10px;text-align:left}}
  td{{padding:6px 8px;border-bottom:.5px solid #e8e6e1;vertical-align:top;font-size:11px}}
  tr:nth-child(even) td{{background:#f9f8f6}}
  .resume{{display:flex;gap:20px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:16px}}
  .resume div{{text-align:center}}
- .resume .val{{font-size:20px;font-weight:700;color:#2D6A4F}}
+ .resume .val{{font-size:20px;font-weight:700;color:#132F21}}
  .resume .lbl{{font-size:10px;color:#666}}
  .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
@@ -5496,20 +5496,20 @@ def _html_pdf_exploitation(client, fiches, score_moyen, nb_parcelles=None):
             <td>{f.get('etat_sanitaire',0)}%</td>
             <td><span style="background:{col}22;color:{col};padding:2px 8px;border-radius:10px;font-weight:700">{sc}/100</span></td>
             <td style="font-size:11px">{f.get('verdict','—')}</td>
-            <td style="font-size:11px;color:#2D6A4F">{dr.get('date_102','—') if dr else '—'}<br>→ {dr.get('date_105','') if dr else ''}</td>
+            <td style="font-size:11px;color:#132F21">{dr.get('date_102','—') if dr else '—'}<br>→ {dr.get('date_105','') if dr else ''}</td>
         </tr>"""
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
   body{{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#1a1a1a}}
-  h1{{color:#2D6A4F;font-size:18px;margin-bottom:4px}}
+  h1{{color:#132F21;font-size:18px;margin-bottom:4px}}
   .sub{{color:#666;font-size:11px;margin-bottom:16px}}
   table{{width:100%;border-collapse:collapse;margin-bottom:16px}}
-  th{{background:#2D6A4F;color:#fff;padding:7px 8px;font-size:10px;text-align:left}}
+  th{{background:#132F21;color:#fff;padding:7px 8px;font-size:10px;text-align:left}}
   td{{padding:7px 8px;border-bottom:.5px solid #e8e6e1;vertical-align:top}}
   tr:nth-child(even) td{{background:#f9f8f6}}
   .resume{{display:flex;gap:20px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:16px}}
   .resume div{{text-align:center}}
-  .resume .val{{font-size:20px;font-weight:700;color:#2D6A4F}}
+  .resume .val{{font-size:20px;font-weight:700;color:#132F21}}
   .resume .lbl{{font-size:10px;color:#666}}
   .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
@@ -5690,7 +5690,7 @@ def _export_itineraire_pdf(client):
     for j_item in itin:
         date_str = fmt_d(j_item['date'])
         kg_tot = j_item.get('kg_total')
-        rows_html += f'<tr style="background:#EAF3DE"><td colspan="6" style="padding:6px 8px;font-weight:700;color:#2D6A4F">{date_str} — Jour {j_item["jour"]}{(" — "+str(kg_tot)+" kg estimés") if kg_tot else ""}</td></tr>'
+        rows_html += f'<tr style="background:#EAF3DE"><td colspan="6" style="padding:6px 8px;font-weight:700;color:#132F21">{date_str} — Jour {j_item["jour"]}{(" — "+str(kg_tot)+" kg estimés") if kg_tot else ""}</td></tr>'
         for p in j_item.get('parcelles', []):
             de = p.get('degre_estime')
             de_col = "#C62828" if de and de < 9 else "#E65100" if de and de < 9.5 else "#2E7D32"
@@ -5707,15 +5707,15 @@ def _export_itineraire_pdf(client):
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
  body{{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#1a1a1a}}
- h1{{color:#2D6A4F;font-size:16px;margin-bottom:4px}}
+ h1{{color:#132F21;font-size:16px;margin-bottom:4px}}
  .sub{{color:#666;font-size:10px;margin-bottom:16px}}
  table{{width:100%;border-collapse:collapse;margin-bottom:16px}}
- th{{background:#2D6A4F;color:#fff;padding:6px 8px;font-size:10px;text-align:left}}
+ th{{background:#132F21;color:#fff;padding:6px 8px;font-size:10px;text-align:left}}
  td{{padding:5px 8px;border-bottom:.5px solid #e8e6e1;font-size:10px}}
  tr:nth-child(even) td{{background:#f9f8f6}}
  .resume{{display:flex;gap:16px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:16px}}
  .resume div{{text-align:center}}
- .resume .val{{font-size:18px;font-weight:700;color:#2D6A4F}}
+ .resume .val{{font-size:18px;font-weight:700;color:#132F21}}
  .resume .lbl{{font-size:9px;color:#666}}
  .footer{{color:#999;font-size:9px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
 </style></head><body>
@@ -6129,7 +6129,7 @@ def _html_pdf_carnet(client, donnees, titre, sous_titre):
     commune_actuelle = None
     for l in sorted(d['lignes'], key=lambda x: (x['commune'], x['date'], x['nom'])):
         if l['commune'] != commune_actuelle:
-            rows_html += f'<tr><td colspan="8" style="background:#EAF3DE;font-weight:700;color:#2D6A4F;padding:6px 8px">{l["commune"] or "—"}</td></tr>'
+            rows_html += f'<tr><td colspan="8" style="background:#EAF3DE;font-weight:700;color:#132F21;padding:6px 8px">{l["commune"] or "—"}</td></tr>'
             commune_actuelle = l['commune']
         rendement_txt = f"{l['rendement']} kg/ha" if l['rendement'] is not None else '—'
         if l.get('provisoire') and l['rendement'] is not None:
@@ -6157,14 +6157,14 @@ def _html_pdf_carnet(client, donnees, titre, sous_titre):
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
   body{{font-family:Arial,sans-serif;font-size:11.5px;margin:20px;color:#1a1a1a}}
-  h1{{color:#2D6A4F;font-size:18px;margin-bottom:4px}}
+  h1{{color:#132F21;font-size:18px;margin-bottom:4px}}
   .sub{{color:#666;font-size:11px;margin-bottom:16px}}
   table{{width:100%;border-collapse:collapse;margin-bottom:16px}}
-  th{{background:#2D6A4F;color:#fff;padding:6px 8px;font-size:10px;text-align:left}}
+  th{{background:#132F21;color:#fff;padding:6px 8px;font-size:10px;text-align:left}}
   td{{padding:5px 8px;border-bottom:.5px solid #e8e6e1;vertical-align:top}}
   .resume{{display:flex;gap:16px;background:#EAF3DE;padding:10px 14px;border-radius:8px;margin-bottom:8px;flex-wrap:wrap}}
   .resume div{{text-align:center}}
-  .resume .val{{font-size:18px;font-weight:700;color:#2D6A4F}}
+  .resume .val{{font-size:18px;font-weight:700;color:#132F21}}
   .resume .lbl{{font-size:9.5px;color:#666}}
   .encours{{font-size:10px;color:#8a5a1a;margin-bottom:16px}}
   .footer{{color:#999;font-size:10px;margin-top:24px;border-top:.5px solid #e0ddd8;padding-top:8px}}
@@ -7264,14 +7264,14 @@ def page_admin_upload_db():
     body{font-family:-apple-system,sans-serif;background:#f8faf8;display:flex;align-items:center;
     justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box}
     .card{background:#fff;border-radius:12px;padding:28px;box-shadow:0 1px 3px rgba(0,0,0,.1);width:100%;max-width:440px}
-    h1{font-size:17px;color:#2D6A4F;margin-bottom:10px}
+    h1{font-size:17px;color:#132F21;margin-bottom:10px}
     p{font-size:13px;color:#444;line-height:1.5;margin-bottom:16px}
     .warn{background:#FFF3CD;color:#664d03;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:16px}
     input[type=file]{width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box}
-    button{width:100%;padding:12px;border:none;border-radius:8px;background:#2D6A4F;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+    button{width:100%;padding:12px;border:none;border-radius:8px;background:#132F21;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
     button:disabled{opacity:.6;cursor:not-allowed}
     .msg{margin-top:12px;padding:10px;border-radius:8px;font-size:13px;display:none}
-    .msg.ok{background:#E8F5E9;color:#2D6A4F;display:block}
+    .msg.ok{background:#E8F5E9;color:#132F21;display:block}
     .msg.err{background:#FFEBEE;color:#C1121F;display:block}
     </style></head><body>
     <div class="card">

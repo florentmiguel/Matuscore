@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VITI Sens — Dashboard</title>
 <style>
-:root{--gd:#2D6A4F;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--or:#E76F51;--obg:#FFF3E0;--rd:#C1121F;--rbg:#FFE0E0;--bl:#2196F3;--bbg:#E3F2FD;--gr:#6B7280;--bk:#1a1a1a;--wh:#FAFCF8;--r:10px;--sh:0 2px 12px rgba(45,106,79,0.08)}
+:root{--gd:#132F21;--gm:#40916C;--gl:#B7E4C7;--gbg:#F0F7F0;--or:#E76F51;--obg:#FFF3E0;--rd:#C1121F;--rbg:#FFE0E0;--bl:#2196F3;--bbg:#E3F2FD;--gr:#6B7280;--bk:#1a1a1a;--wh:#FAFCF8;--r:10px;--sh:0 2px 12px rgba(45,106,79,0.08)}
 *{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(160deg,#f7faf5,#eef5e8 40%,#f5f0e8);color:var(--bk);min-height:100vh}
 .hdr{background:var(--gd);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 20px rgba(0,0,0,.15)}
 .hdr h1{color:#fff;font-size:22px;font-weight:700}.hdr .sub{color:var(--gl);font-size:11px}
@@ -1341,7 +1341,7 @@ function loadPortails(){
   <div style="padding:16px 16px 0">
    <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #e5e7eb">
     <button id="ptab-matu" onclick="showPortailTab('matu')"
-     style="padding:8px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid #2D6A4F;color:#2D6A4F;margin-bottom:-2px">
+     style="padding:8px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid #132F21;color:#132F21;margin-bottom:-2px">
      🍇 Maturité
     </button>
     <button id="ptab-phyto" onclick="showPortailTab('phyto')"
@@ -1360,8 +1360,8 @@ function showPortailTab(tab){
   const btn=document.getElementById('ptab-'+t);
   const div=document.getElementById('portail-'+t);
   const active=t===tab;
-  btn.style.borderBottom=active?'2px solid #2D6A4F':'2px solid transparent';
-  btn.style.color=active?'#2D6A4F':'#666';
+  btn.style.borderBottom=active?'2px solid #132F21':'2px solid transparent';
+  btn.style.color=active?'#132F21':'#666';
   div.style.display=active?'block':'none';
  });
  if(tab==='matu') loadPortailMatu();
@@ -1374,7 +1374,7 @@ function certBadge(cert){
  return `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${(certCol[cert]||'#999')}22;color:${certCol[cert]||'#999'};font-weight:600">${cert||'—'}</span>`;
 }
 function portailBtn(url){
- return `<a href="${url}" target="_blank" style="display:inline-block;padding:5px 12px;background:#2D6A4F;color:#fff;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap">Ouvrir →</a>`;
+ return `<a href="${url}" target="_blank" style="display:inline-block;padding:5px 12px;background:#132F21;color:#fff;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap">Ouvrir →</a>`;
 }
 
 async function loadPortailMatu(){
@@ -1396,7 +1396,7 @@ async function loadPortailMatu(){
   </div>`;
 
   h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
-  h+='<thead><tr style="background:#2D6A4F;color:#fff">';
+  h+='<thead><tr style="background:#132F21;color:#fff">';
   ['Exploitation','Cert.','Parc.','Dernier relevé','Degré moy.','Score moy.','Alertes sanitaires','Portail'].forEach(col=>{
    h+=`<th style="padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap">${col}</th>`;
   });
@@ -1444,7 +1444,7 @@ async function loadPortailPhyto(){
   </div>`;
 
   h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
-  h+='<thead><tr style="background:#2D6A4F;color:#fff">';
+  h+='<thead><tr style="background:#132F21;color:#fff">';
   ['Exploitation','Cert.','Dernier passage','Statut','Produits conseillés','Portail'].forEach(col=>{
    h+=`<th style="padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap">${col}</th>`;
   });
@@ -1458,13 +1458,13 @@ async function loadPortailPhyto(){
    h+=`<td style="padding:8px 10px">${certBadge(c.certification)}</td>`;
    // Passage + date
    if(ph){
-    h+=`<td style="padding:8px 10px"><span style="font-weight:700;color:#2D6A4F">${ph.passage}</span><div style="font-size:10px;color:#666">${fmtD(ph.date)}</div></td>`;
+    h+=`<td style="padding:8px 10px"><span style="font-weight:700;color:#132F21">${ph.passage}</span><div style="font-size:10px;color:#666">${fmtD(ph.date)}</div></td>`;
     // Statut global
     const app=ph.applique==='Oui';
     h+=`<td style="padding:8px 10px"><span style="font-size:11px;padding:3px 8px;border-radius:10px;background:${app?'#E8F5E9':'#FFF3E0'};color:${app?'#2E7D32':'#E65100'};font-weight:600">${app?'✓ Appliqué':'⏳ Prévu'}</span></td>`;
     // Produits
     let pCell=ph.produits.map(p=>{
-     let s=`<div style="margin-bottom:5px;padding:5px 8px;background:#f5f5f5;border-radius:4px;border-left:3px solid #2D6A4F">`;
+     let s=`<div style="margin-bottom:5px;padding:5px 8px;background:#f5f5f5;border-radius:4px;border-left:3px solid #132F21">`;
      s+=`<div style="font-weight:600">${p.nom}</div>`;
      if(p.sa) s+=`<div style="font-size:10px;color:#666">${p.sa}</div>`;
      if(p.dose) s+=`<div style="font-size:10px;color:#1565C0">${p.dose}</div>`;
@@ -1511,7 +1511,7 @@ function loadOutils(){
   <div style="border:.5px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:12px">
    <div style="font-size:13px;font-weight:600;margin-bottom:4px">Normalisation communes</div>
    <div style="font-size:12px;color:#666;margin-bottom:10px">Passe toutes les communes en majuscules dans la base de données.</div>
-   <button onclick="outilsFixCommunes()" style="background:#2D6A4F;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Convertir</button>
+   <button onclick="outilsFixCommunes()" style="background:#132F21;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Convertir</button>
    <span id="outils-communes-msg" style="font-size:11px;color:#666;margin-left:8px"></span>
   </div>
 
