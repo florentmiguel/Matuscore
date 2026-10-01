@@ -558,6 +558,21 @@ def init_db():
         "ALTER TABLE clients ADD COLUMN email TEXT",
         "ALTER TABLE clients ADD COLUMN telephone TEXT",
         "ALTER TABLE clients ADD COLUMN notes TEXT",
+        # Alignement du catalogue sur la base e-phy partagée avec Racine —
+        # amm devient la clé de correspondance ; les champs réglementaires
+        # supplémentaires (phrases H, CMR, substances déjà découpées pour
+        # la recherche stricte par substance, usages complets) s'ajoutent
+        # sans toucher aux colonnes existantes ni aux id déjà utilisés par
+        # des prescriptions historiques.
+        "ALTER TABLE catalogue ADD COLUMN amm TEXT",
+        "ALTER TABLE catalogue ADD COLUMN phrases_h TEXT",
+        "ALTER TABLE catalogue ADD COLUMN cmr TEXT DEFAULT 'NON'",
+        "ALTER TABLE catalogue ADD COLUMN substances_parsees TEXT",
+        "ALTER TABLE catalogue ADD COLUMN usages_json TEXT",
+        "ALTER TABLE catalogue ADD COLUMN envm TEXT",
+        "ALTER TABLE catalogue ADD COLUMN envf TEXT",
+        "ALTER TABLE catalogue ADD COLUMN source_ephy INTEGER DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS idx_catalogue_amm ON catalogue(amm)",
     ]:
         try: conn.execute(alter)
         except: pass
