@@ -759,6 +759,17 @@ function showMegaTab(mega){
  if(btn) btn.classList.add('act');
  document.getElementById('mega-phyto').style.display = mega==='phyto' ? 'block' : 'none';
  document.getElementById('mega-vendanges').style.display = mega==='vendanges' ? 'block' : 'none';
+ // Sécurité : nettoie l'état de TOUTES les sous-sections (des deux groupes), pour
+ // qu'un résidu d'une visite précédente (ex. "Réglages" resté actif) ne puisse
+ // jamais réapparaître au prochain passage sur ce groupe — puis affiche un
+ // sous-onglet par défaut cohérent plutôt que de laisser l'état précédent décider.
+ const allSubSections={phyto:['bulletin','meteo','traitements','historique','documents'],
+                    vendanges:['maturite','rendement','exploitation','itineraire','carnet','parcelles','reglages']};
+ Object.values(allSubSections).flat().forEach(n=>{
+  const s=document.getElementById('sec-'+n);
+  if(s) s.classList.remove('active');
+ });
+ showSubTab(mega, mega==='phyto' ? 'bulletin' : 'maturite');
 }
 
 function showSubTab(mega, name){
