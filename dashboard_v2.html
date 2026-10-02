@@ -295,33 +295,97 @@ async function saveProdEdit(){
 async function delP(id){if(confirm('Supprimer ?')){await api(`/api/catalogue/${id}`,{method:'DELETE'});loadCat();loadCatalogueCache();}}
 
 // ===== PRESCRIPTIONS =====
+// Campagne affichée (année) et liste des clients actuellement dépliés —
+// permet de "repartir de zéro" chaque saison : par défaut, seule la
+// campagne en cours est affichée, les précédentes restent accessibles via
+// les flèches sans jamais être supprimées.
+let _prescCampagneActuelle=new Date().getFullYear();
+let _prescClientsOuverts=new Set();
+
+function xfChangerCampagne(delta){
+ _prescCampagneActuelle+=delta;
+ _prescClientsOuverts.clear();
+ loadPresc();
+}
+function xfToggleClientPresc(cid){
+ if(_prescClientsOuverts.has(cid)) _prescClientsOuverts.delete(cid);
+ else _prescClientsOuverts.add(cid);
+ loadPresc();
+}
+
 async function loadPresc(){
- const allPresc=await aj('/api/prescriptions');
+ const allPrescBrut=await aj('/api/prescriptions');
+ // Les prescriptions enregistrées avant l'ajout de ce champ n'ont pas de
+ // campagne — on les rattache à l'année en cours par défaut plutôt que de
+ // les faire disparaître silencieusement.
+ const anneeParDefaut=String(new Date().getFullYear());
+ const allPresc=allPrescBrut.map(p=>({...p, campagne:p.campagne||anneeParDefaut}));
+
  const cid=document.getElementById('fp_cl')?.value||'';
  const fpass=document.getElementById('fp_pa')?.value||'';
  const fprod=document.getElementById('fp_pr')?.value||'';
- // Filtrer
- let presc=allPresc;
+
+ let presc=allPresc.filter(p=>p.campagne===String(_prescCampagneActuelle));
  if(cid) presc=presc.filter(p=>p.id_client===cid);
  if(fpass) presc=presc.filter(p=>p.passage===fpass);
  if(fprod) presc=presc.filter(p=>(p.nom_produit||'').toLowerCase().includes(fprod.toLowerCase()));
- // Listes pour les filtres
+
+ // Regroupement par client : la plus récente (id le plus élevé) en tête,
+ // les clients eux-mêmes triés par leur prescription la plus récente.
+ const parClient={};
+ presc.forEach(p=>{ (parClient[p.id_client]=parClient[p.id_client]||[]).push(p); });
+ Object.values(parClient).forEach(liste=>liste.sort((a,b)=>b.id-a.id));
+ const clientsIds=Object.keys(parClient).sort((a,b)=>
+  Math.max(...parClient[b].map(p=>p.id)) - Math.max(...parClient[a].map(p=>p.id))
+ );
+
  let selCl='<option value="">Tous les clients</option>';CLIENTS.forEach(c=>{selCl+=`<option value="${c.id}" ${cid===c.id?'selected':''}>${c.exploitation}</option>`;});
  const passages=[...new Set(allPresc.map(p=>p.passage).filter(Boolean))].sort();
  let selPa='<option value="">Tous les passages</option>';passages.forEach(p=>{selPa+=`<option ${fpass===p?'selected':''}>${p}</option>`;});
  const produits=[...new Set(allPresc.map(p=>p.nom_produit).filter(Boolean))].sort();
  let selPr='<option value="">Tous les produits</option>';produits.forEach(p=>{selPr+=`<option ${fprod===p?'selected':''}>${p}</option>`;});
+
  let h=`<div class="card"><div class="ct"><span>📋 Prescriptions</span><button class="btn br btn-sm" onclick="showXF()">+ Ajouter</button></div>
+ <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+  <button class="btn btn-sm bg" onclick="xfChangerCampagne(-1)">‹</button>
+  <strong style="font-size:13px">Campagne ${_prescCampagneActuelle}</strong>
+  <button class="btn btn-sm bg" onclick="xfChangerCampagne(1)">›</button>
+ </div>
  <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
   <select id="fp_cl" onchange="loadPresc()" style="width:auto">${selCl}</select>
   <select id="fp_pa" onchange="loadPresc()" style="width:auto">${selPa}</select>
   <select id="fp_pr" onchange="loadPresc()" style="width:auto">${selPr}</select>
- </div>
- <table><tr><th class="or">Client</th><th class="or">Exploitation</th><th class="or">Cible</th><th class="or">Passage</th><th class="or">Produit</th><th class="or">Dose homol.</th><th class="or">DOSE PRESCRITE</th><th class="or">Vol.</th><th class="or">Obs.</th><th class="or">Act.</th></tr>`;
- presc.forEach(p=>{const cu=p.dose_prescrite&&p.dose_prescrite!==p.dose_homologuee;
-  const cl=CLIENTS.find(c=>c.id===p.id_client);
-  h+=`<tr><td style="font-size:9px;color:var(--gr)">${p.id_client}</td><td><strong>${cl?cl.exploitation:p.id_client}</strong></td><td>${p.cible||''}</td><td><strong>${p.passage||''}</strong></td><td><strong>${p.nom_produit||''}</strong></td><td style="color:var(--gr);font-size:9px">${p.dose_homologuee||''}</td><td style="font-weight:700;${cu?'color:var(--rd);background:#fffde7':''}">${p.dose_prescrite||'[?]'}</td><td>${p.volume_bouillie||''}</td><td style="font-size:9px;color:var(--gr)">${p.observations||''}</td><td><button class="btn btn-sm bg" onclick='editPresc(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button> <button class="btn btn-sm btn-del" onclick="delX(${p.id})">🗑</button></td></tr>`;
- });h+=`</table><p style="margin-top:6px;font-size:10px;color:var(--gr)">${presc.length} prescription(s) sur ${allPresc.length}</p></div>`;
+ </div>`;
+
+ if(!clientsIds.length){
+  h+=`<p style="color:var(--gr);font-size:12px;padding:12px 0">Aucune prescription pour cette campagne.</p></div>`;
+  document.getElementById('tc-prescriptions').innerHTML=h;
+  return;
+ }
+
+ h+=`<table><tr><th class="or">Client</th><th class="or">Dernière prescription</th><th class="or"></th></tr>`;
+ clientsIds.forEach(cidKey=>{
+  const liste=parClient[cidKey];
+  const derniere=liste[0];
+  const cl=CLIENTS.find(c=>c.id===cidKey);
+  const ouvert=_prescClientsOuverts.has(cidKey);
+  h+=`<tr style="cursor:pointer" onclick="xfToggleClientPresc('${cidKey}')">
+   <td><strong>${cl?cl.exploitation:cidKey}</strong></td>
+   <td>${derniere.cible||''} — ${derniere.nom_produit||''} <span style="color:var(--gr);font-size:9px">(${derniere.passage||''})</span></td>
+   <td style="text-align:right;white-space:nowrap">${ouvert?'▲':'▼'} ${liste.length} prescription${liste.length>1?'s':''}</td>
+  </tr>`;
+  if(ouvert){
+   h+=`<tr><td colspan="3" style="padding:0 0 8px 0">
+    <table style="margin:0;width:100%">
+     <tr><th class="or">Cible</th><th class="or">Passage</th><th class="or">Produit</th><th class="or">Dose homol.</th><th class="or">DOSE PRESCRITE</th><th class="or">Vol.</th><th class="or">Obs.</th><th class="or">Act.</th></tr>`;
+   liste.forEach(p=>{
+    const cu=p.dose_prescrite&&p.dose_prescrite!==p.dose_homologuee;
+    h+=`<tr><td>${p.cible||''}</td><td><strong>${p.passage||''}</strong></td><td><strong>${p.nom_produit||''}</strong></td><td style="color:var(--gr);font-size:9px">${p.dose_homologuee||''}</td><td style="font-weight:700;${cu?'color:var(--rd);background:#fffde7':''}">${p.dose_prescrite||'[?]'}</td><td>${p.volume_bouillie||''}</td><td style="font-size:9px;color:var(--gr)">${p.observations||''}</td><td><button class="btn btn-sm bg" onclick='event.stopPropagation();editPresc(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button> <button class="btn btn-sm btn-del" onclick="event.stopPropagation();delX(${p.id})">🗑</button></td></tr>`;
+   });
+   h+=`</table></td></tr>`;
+  }
+ });
+ h+=`</table><p style="margin-top:6px;font-size:10px;color:var(--gr)">${presc.length} prescription(s) sur ${clientsIds.length} client(s) — campagne ${_prescCampagneActuelle}</p></div>`;
  document.getElementById('tc-prescriptions').innerHTML=h;
 }
 // Enregistrement du service worker — nécessaire pour recevoir les

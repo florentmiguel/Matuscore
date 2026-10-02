@@ -784,6 +784,9 @@ def init_db():
         # validation par le client, parmi tous les produits de composition
         # identique.
         "ALTER TABLE prescriptions ADD COLUMN substances_prescrites TEXT",
+        # Campagne (année) — permet de repartir de zéro chaque saison dans
+        # le dashboard, comme déjà fait pour rendements/bulletins/etc.
+        "ALTER TABLE prescriptions ADD COLUMN campagne TEXT",
     ]:
         try: conn.execute(alter)
         except: pass
@@ -1311,13 +1314,13 @@ def create_prescription():
     cur = conn.execute("""INSERT INTO prescriptions
         (id_client,cible,passage,id_produit,nom_produit,substance_active,type_cps,
         dose_homologuee,dose_prescrite,volume_bouillie,date_prevue,observations,applique,
-        substances_prescrites)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        substances_prescrites,campagne)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (d.get('id_client'), d.get('cible'), d.get('passage'), d.get('id_produit'),
          d.get('nom_produit'), d.get('substance_active'), d.get('type_cps'),
          d.get('dose_homologuee'), d.get('dose_prescrite'), d.get('volume_bouillie'),
          d.get('date_prevue'), d.get('observations'), d.get('applique','Non'),
-         d.get('substances_prescrites')))
+         d.get('substances_prescrites'), str(datetime.now().year)))
     nouvel_id = cur.lastrowid
     conn.commit(); conn.close()
     return jsonify({"status": "ok", "id": nouvel_id})
