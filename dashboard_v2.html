@@ -451,10 +451,14 @@ function xfAddProdRow(n){
   ${n>1?'<button class="btn btn-sm btn-del" onclick="xfRemoveRow('+n+')">✕</button>':''}
  </div>
  <div class="fg fg3">
-  <div><label>Cible exacte de ce traitement</label><select id="xf_ci${n}" disabled><option value="">— Choisissez d'abord ci-contre —</option></select></div>
+  <div style="position:relative">
+   <label>Cible — recherche (syntaxe e-phy)</label>
+   <input id="xf_cible_search${n}" placeholder="ex: mildiou, acariens..." oninput="xfRechercheCible(${n})" autocomplete="off">
+   <div id="xf_cible_resultats${n}" style="position:absolute;z-index:21;background:#fff;border:1px solid #d1d5db;border-radius:0 0 6px 6px;max-height:220px;overflow-y:auto;width:100%;display:none"></div>
+  </div>
   <div style="grid-column:span 2;position:relative">
    <label>Recherche — spécialité commerciale OU substance active</label>
-   <input id="xf_search${n}" placeholder="ex: folpel, ou AMAROK..." oninput="xfRechercheUnifiee(${n})" autocomplete="off">
+   <input id="xf_search${n}" placeholder="— choisissez d'abord une cible —" disabled oninput="xfRechercheUnifiee(${n})" autocomplete="off">
    <div id="xf_resultats${n}" style="position:absolute;z-index:20;background:#fff;border:1px solid #d1d5db;border-radius:0 0 6px 6px;max-height:220px;overflow-y:auto;width:100%;display:none"></div>
   </div>
   <div><label>DOSE PRESCRITE</label><input id="xf_dp${n}" style="border-color:var(--rd);font-weight:700" placeholder="Votre dose"></div>
@@ -467,7 +471,8 @@ function xfAddProdRow(n){
   <div><label>Famille (auto)</label><input id="xf_fam${n}" readonly style="background:#f3f4f6;font-size:10px"></div>
  </div>
  <select id="xf_pr${n}" style="display:none"><option value="">— Choisir —</option></select>
- <input type="hidden" id="xf_substances${n}" value="">`;
+ <input type="hidden" id="xf_substances${n}" value="">
+ <input type="hidden" id="xf_cible_choisie${n}" value="">`;
  container.appendChild(div);
 }
 
@@ -504,7 +509,6 @@ function xfRefreshAll(){
    }
   }
  }
- for(let i=1;i<=5;i++){if(document.getElementById('xf_ci'+i)) xfUpdateFamilles(i);}
 }
 
 function xfGetCert(){
@@ -522,49 +526,13 @@ function xfGetCert(){
 // (Bio/HVE) reste un filtre appliqué en amont.
 function xfGetFiltered(n){
  const cert=xfGetCert();
+ const cibleChoisie=document.getElementById('xf_cible_choisie'+n)?.value||'';
  return CATALOGUE.filter(p=>{
   if(cert==='Bio' && !p.compatible_bio) return false;
   if(cert==='HVE' && !p.compatible_hve) return false;
+  if(cibleChoisie && !_xfUsagesVigne(p).some(u=>(u.c||'').trim()===cibleChoisie)) return false;
   return true;
  });
-}
-
-// Remplit le menu Cible avec l'union des cibles réellement associées aux
-// produits retenus, POUR LA DOSE précise du groupe choisi (un produit peut
-// viser Excoriose à une dose et Mildiou à une autre — mélanger les cibles
-// de toutes ses doses donnerait de fausses correspondances). Florent
-// choisit ensuite laquelle correspond à CE traitement précis — c'est cette
-// valeur, et seulement elle, qui sera enregistrée puis remontée en
-// traçabilité.
-function xfMajCibles(n, produits, doseGroupe){
- const sel=document.getElementById('xf_ci'+n);
- if(!sel) return;
- const cibles=new Set();
- produits.forEach(p=>{
-  const usagesVigne=_xfUsagesVigne(p);
-  const usagesPertinents=doseGroupe
-   ? usagesVigne.filter(u=>(u.d||'').trim()===doseGroupe)
-   : usagesVigne;
-  if(usagesPertinents.length){
-   // Chaîne complète conservée telle quelle (ex. "Vigne*Trt Part.Aer.*
-   // Mildiou(s)"), pas seulement le dernier segment — pour coller très
-   // exactement au vocabulaire de Racine lors de la synchronisation.
-   usagesPertinents.forEach(u=>{
-    const c=(u.c||'').trim();
-    if(c) cibles.add(c);
-   });
-  } else {
-   // Pas d'usage détaillé (produit perso/MFSC) -> retombe sur le champ cible classique
-   (p.cible||'').split('|').map(c=>c.trim()).filter(Boolean).forEach(c=>cibles.add(c));
-  }
- });
- if(!cibles.size){
-  sel.innerHTML='<option value="">— Aucune cible renseignée, à préciser —</option>';
-  sel.disabled=false;
-  return;
- }
- sel.innerHTML=[...cibles].sort().map(c=>`<option>${c}</option>`).join('');
- sel.disabled=false; // toujours modifiable, même quand une seule cible est proposée
 }
 
 let _xfGroupes={}; // cache des regroupements par composition, par ligne (n)
@@ -615,28 +583,78 @@ function _xfUsagesVigne(p){
 function _xfClesSubstances(p){
  return [..._xfSubstances(p)].map(s=>_xfNormaliser(s.cle)).sort();
 }
-function _xfClesGroupePourProduit(p){
+// La clé de regroupement inclut la DOSE *ET* son UNITÉ (pas seulement le
+// chiffre) — deux produits à "12.5" mais l'un en L/ha (liquide) et l'autre
+// en kg/ha (solide) ne sont évidemment pas interchangeables, même si le
+// nombre coïncide.
+function _xfClesGroupePourProduit(p, cibleChoisie){
  const subs=_xfClesSubstances(p).join('+');
- const usagesVigne=_xfUsagesVigne(p);
- if(!usagesVigne.length) return [subs+'__dose:'+(p.dose_homologuee||'').trim()];
- const doses=new Set(usagesVigne.map(u=>(u.d||'').trim()));
- return [...doses].map(d=>subs+'__dose:'+d);
+ let usagesVigne=_xfUsagesVigne(p);
+ // La cible étant désormais choisie EN AMONT, on ne regroupe que sur les
+ // usages qui correspondent exactement à cette cible précise — sinon un
+ // produit visant à la fois Acariens (20 kg/ha) et Oïdium (12.5 kg/ha)
+ // mélangerait les deux doses dans un seul regroupement erroné.
+ if(cibleChoisie) usagesVigne=usagesVigne.filter(u=>(u.c||'').trim()===cibleChoisie);
+ if(!usagesVigne.length) return [subs+'__dose:'+(p.dose_homologuee||'').trim()+'__unite:'+(p.unite||'').trim()];
+ const combos=new Set(usagesVigne.map(u=>(u.d||'').trim()+'__unite:'+(u.un||'').trim()));
+ return [...combos].map(c=>subs+'__dose:'+c);
 }
 function _xfLabelGroupe(cle){
  return cle.split('__dose:')[0].split('+').join(' + ');
 }
 function _xfDoseDeCle(cle){
- return cle.split('__dose:')[1]||'';
+ return (cle.split('__dose:')[1]||'').split('__unite:')[0];
 }
-// Retrouve l'unité réelle (L/ha, kg/ha, kg/hL...) associée à cette dose
-// précise, en cherchant l'usage vigne correspondant parmi les produits du
-// groupe — la dose seule (ex. "7.5") ne dit rien sans son unité.
-function _xfUniteDeDose(produits, dose){
- for(const p of produits){
-  const u=_xfUsagesVigne(p).find(u=>(u.d||'').trim()===dose);
-  if(u && u.un) return u.un;
+function _xfUniteDeCle(cle){
+ return (cle.split('__unite:')[1]||'');
+}
+// Liste de toutes les cibles distinctes (syntaxe e-phy complète, ex.
+// "Vigne*Trt Part.Aer.*Mildiou(s)") présentes dans le catalogue — calculée
+// une fois et mise en cache, car scanner tout le catalogue à chaque frappe
+// serait coûteux.
+let _xfToutesCiblesCache=null;
+function _xfToutesCibles(){
+ if(_xfToutesCiblesCache) return _xfToutesCiblesCache;
+ const cibles=new Set();
+ CATALOGUE.forEach(p=>_xfUsagesVigne(p).forEach(u=>{ if(u.c) cibles.add(u.c.trim()); }));
+ _xfToutesCiblesCache=[...cibles].sort();
+ return _xfToutesCiblesCache;
+}
+
+function xfRechercheCible(n){
+ const motBrut=(document.getElementById('xf_cible_search'+n).value||'').trim();
+ const resDiv=document.getElementById('xf_cible_resultats'+n);
+ if(!motBrut){ resDiv.style.display='none'; resDiv.innerHTML=''; return; }
+ const mot=_xfNormaliser(motBrut);
+ const matches=_xfToutesCibles().filter(c=>_xfNormaliser(c).includes(mot));
+ if(!matches.length){
+  resDiv.innerHTML='<div style="padding:6px 8px;color:var(--gr);font-size:11px">Aucune cible trouvée</div>';
+  resDiv.style.display='block';
+  return;
  }
- return '';
+ resDiv.innerHTML=matches.slice(0,30).map(c=>
+  `<div onclick='xfChoisirCible(${n},${JSON.stringify(c)})' style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #eee;font-size:11px" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='#fff'">${c}</div>`
+ ).join('');
+ resDiv.style.display='block';
+}
+
+function xfChoisirCible(n, cible){
+ document.getElementById('xf_cible_choisie'+n).value=cible;
+ document.getElementById('xf_cible_search'+n).value=cible;
+ document.getElementById('xf_cible_resultats'+n).style.display='none';
+ // Réinitialiser toute sélection de substance précédente : elle dépend de
+ // la cible, qui vient de changer.
+ document.getElementById('xf_search'+n).disabled=false;
+ document.getElementById('xf_search'+n).placeholder='ex: folpel, ou AMAROK...';
+ document.getElementById('xf_search'+n).value='';
+ document.getElementById('xf_resultats'+n).innerHTML='';
+ document.getElementById('xf_resultats'+n).style.display='none';
+ document.getElementById('xf_substances'+n).value='';
+ document.getElementById('xf_sa'+n).value='';
+ document.getElementById('xf_ty'+n).value='';
+ document.getElementById('xf_dh'+n).value='';
+ document.getElementById('xf_fam'+n).value='';
+ document.getElementById('xf_info'+n).innerHTML='';
 }
 
 function xfRechercheUnifiee(n){
@@ -645,30 +663,32 @@ function xfRechercheUnifiee(n){
  if(!motBrut){ resDiv.style.display='none'; resDiv.innerHTML=''; return; }
  const mot=_xfNormaliser(motBrut); // insensible à la casse ET aux accents
  const prods=xfGetFiltered(n);
+ const cibleChoisie=document.getElementById('xf_cible_choisie'+n)?.value||'';
 
  // Dans les deux cas (recherche par nom de produit OU par substance), le
  // résultat final est un GROUPE de spécialités équivalentes (même
- // composition — par clé scientifique, pas nom usuel — même dose
- // homologuée) — jamais un produit isolé, pour que le client ait bien le
- // choix parmi tout ce qui est réellement interchangeable (ex. MAXISOUFRE,
- // HELIOSOUFRE S, BIOSOUFRE... et les produits "Sulphur" qui sont la même
- // substance malgré un nom usuel différent dans la base source).
+ // composition — par clé scientifique, pas nom usuel — même dose ET même
+ // unité, pour LA cible déjà choisie) — jamais un produit isolé, pour que
+ // le client ait bien le choix parmi tout ce qui est réellement
+ // interchangeable (ex. MAXISOUFRE, HELIOSOUFRE S, BIOSOUFRE... et les
+ // produits "Sulphur" qui sont la même substance malgré un nom usuel
+ // différent dans la base source).
  const groupes={};
  const parNom=prods.filter(p=>_xfNormaliser(p.nom).includes(mot));
  if(parNom.length){
   // Étendre chaque produit trouvé par son nom à TOUS ses groupes
-  // d'équivalents (un par dose vigne distincte qu'il possède)
+  // d'équivalents (un par dose vigne distincte qu'il possède, pour cette cible)
   const clesVisees=new Set();
-  parNom.forEach(p=>_xfClesGroupePourProduit(p).forEach(c=>clesVisees.add(c)));
+  parNom.forEach(p=>_xfClesGroupePourProduit(p,cibleChoisie).forEach(c=>clesVisees.add(c)));
   prods.forEach(p=>{
-   _xfClesGroupePourProduit(p).forEach(cle=>{
+   _xfClesGroupePourProduit(p,cibleChoisie).forEach(cle=>{
     if(clesVisees.has(cle)) (groupes[cle]=groupes[cle]||[]).push(p);
    });
   });
  } else {
   prods.forEach(p=>{
    if(!_xfSubstances(p).length || !_xfSubstanceMatch(p, mot)) return;
-   _xfClesGroupePourProduit(p).forEach(cle=>{
+   _xfClesGroupePourProduit(p,cibleChoisie).forEach(cle=>{
     (groupes[cle]=groupes[cle]||[]).push(p);
    });
   });
@@ -685,7 +705,7 @@ function xfRechercheUnifiee(n){
   resDiv.innerHTML=cles.map(cle=>{
    const liste=groupes[cle];
    const dose=_xfDoseDeCle(cle);
-   const unite=_xfUniteDeDose(liste,dose)||liste[0]?.unite||'';
+   const unite=_xfUniteDeCle(cle);
    const formulation=_xfFormulation(unite);
    return `<div onclick='xfChoisirGroupe(${n},${JSON.stringify(cle)})' style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #eee;font-size:11px" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='#fff'">
     <strong>${_xfLabelGroupe(cle)}</strong>${dose?` — dose hom. ${dose}${unite?' '+unite:''}`:''}${formulation?` <span style="font-size:9px">${formulation}</span>`:''} <span style="color:var(--gr);font-size:9px">(${liste.length} spécialité${liste.length>1?'s':''})</span>
@@ -731,10 +751,11 @@ function xfChoisirGroupe(n,cle){
  document.getElementById('xf_sa'+n).value=liste[0]?.substance_active||label;
  document.getElementById('xf_ty'+n).value=liste[0]?.type_cps||liste[0]?.type_mfsc||'';
  const doseGroupe=_xfDoseDeCle(cle);
- const uniteGroupe=_xfUniteDeDose(liste,doseGroupe)||liste[0]?.unite||'';
+ const uniteGroupe=_xfUniteDeCle(cle);
  document.getElementById('xf_dh'+n).value=doseGroupe ? `${doseGroupe}${uniteGroupe?' '+uniteGroupe:''}` : (liste[0]?.dose_homologuee||'');
  document.getElementById('xf_fam'+n).value=liste[0]?.famille||'';
- xfMajCibles(n,liste,_xfDoseDeCle(cle));
+ // La cible est désormais choisie EN AMONT (xf_cible_choisie) — plus besoin
+ // de la re-déduire ici après le choix de substance.
 }
 
 async function saveXMulti(){
@@ -759,7 +780,7 @@ async function saveXMulti(){
   if(!dp){alert('Renseignez la dose prescrite pour le produit '+i);return;}
   const substancesJson=document.getElementById('xf_substances'+i)?.value||'';
   prods.push({
-   cible:document.getElementById('xf_ci'+i)?.value||'',
+   cible:document.getElementById('xf_cible_choisie'+i)?.value||'',
    id_produit:prSel.value||'',
    nom_produit:opt?.dataset?.nom||opt?.textContent?.replace(/^[🧪🌿🧬📦]\s*/,'').replace(/\s*\[.\]$/,'')||'',
    substance_active:document.getElementById('xf_sa'+i)?.value||'',

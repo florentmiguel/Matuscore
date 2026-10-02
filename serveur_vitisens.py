@@ -1129,11 +1129,15 @@ def update_client(cid):
 
 @app.route('/api/clients/<cid>/notifier-prescription', methods=['POST'])
 def notifier_prescription(cid):
-    """Envoie au client un e-mail récapitulant la ou les préconisations
-    qui viennent d'être enregistrées pour lui — un seul e-mail même si
-    plusieurs produits ont été prescrits en même temps."""
+    """Prévient le client qu'une préconisation vient d'être enregistrée.
+    Le push est le canal prioritaire ; l'e-mail n'est envoyé qu'en filet de
+    sécurité, UNIQUEMENT si ce client n'a aucun appareil abonné au push
+    — jamais les deux à la fois, pour éviter un doublon de notification."""
     conn = get_db()
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
+    a_un_push_actif = conn.execute(
+        "SELECT 1 FROM push_subscriptions WHERE id_client=? LIMIT 1", (cid,)
+    ).fetchone() is not None
     conn.close()
     if not client:
         return jsonify({"error": "Client introuvable"}), 404
@@ -1144,28 +1148,30 @@ def notifier_prescription(cid):
         return jsonify({"status": "skipped", "reason": "Aucun produit"})
     lien = f"{DOMAIN}/portail/{client['portail_token']}" if client.get("portail_token") else f"{DOMAIN}/connexion"
 
-    # E-mail et push sont deux canaux indépendants — l'absence de l'un ne
-    # doit jamais empêcher l'autre (ex. un client sans e-mail renseigné
-    # peut quand même avoir activé les notifications push).
-    email = (client.get("email") or "").split(";")[0].strip()
-    if email:
-        lignes = "".join(
-            f'<li><strong>{p.get("cible","")}</strong> — {p.get("nom_produit","")} '
-            f'({p.get("dose_prescrite","")})</li>'
-            for p in produits
-        )
-        send_email_auto(email, f"Nouvelle préconisation — {passage} 🍇", f"""
-            <p>Bonjour,</p>
-            <p>Une nouvelle préconisation vient d'être enregistrée pour <strong>{client.get('exploitation','')}</strong> — passage <strong>{passage}</strong> :</p>
-            <ul>{lignes}</ul>
-            <p>Consultez le détail et validez le traitement une fois réalisé ici : <a href="{lien}">{lien}</a></p>
-            <p>À bientôt,<br>Florent — Pilot by VITI Sens</p>
-        """)
+    if a_un_push_actif:
+        resume = ", ".join(f"{p.get('nom_produit','')}" for p in produits)
+        envoyer_push(cid, f"Nouvelle préconisation — {passage}", resume,
+                     url=f"/portail/{client['portail_token']}" if client.get("portail_token") else "/connexion")
+        return jsonify({"status": "ok", "canal": "push"})
 
-    resume = ", ".join(f"{p.get('nom_produit','')}" for p in produits)
-    envoyer_push(cid, f"Nouvelle préconisation — {passage}", resume,
-                 url=f"/portail/{client['portail_token']}" if client.get("portail_token") else "/connexion")
-    return jsonify({"status": "ok"})
+    # Filet de sécurité uniquement : ce client n'a aucun appareil abonné au
+    # push, donc l'e-mail reste le seul moyen de le prévenir.
+    email = (client.get("email") or "").split(";")[0].strip()
+    if not email:
+        return jsonify({"status": "skipped", "reason": "Aucun push actif et aucun e-mail pour ce client"})
+    lignes = "".join(
+        f'<li><strong>{p.get("cible","")}</strong> — {p.get("nom_produit","")} '
+        f'({p.get("dose_prescrite","")})</li>'
+        for p in produits
+    )
+    send_email_auto(email, f"Nouvelle préconisation — {passage} 🍇", f"""
+        <p>Bonjour,</p>
+        <p>Une nouvelle préconisation vient d'être enregistrée pour <strong>{client.get('exploitation','')}</strong> — passage <strong>{passage}</strong> :</p>
+        <ul>{lignes}</ul>
+        <p>Consultez le détail et validez le traitement une fois réalisé ici : <a href="{lien}">{lien}</a></p>
+        <p>À bientôt,<br>Florent — Pilot by VITI Sens</p>
+    """)
+    return jsonify({"status": "ok", "canal": "email"})
 
 @app.route('/api/clients/<cid>/lier-racine', methods=['POST'])
 def lier_client_racine(cid):
