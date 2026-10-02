@@ -88,6 +88,182 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 if stripe and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
+# Accès à Racine by VITI Sens (Supabase) — clé "service_role", jamais la clé
+# publique "anon", car il faut pouvoir lire/écrire les données de N'IMPORTE
+# QUEL client (pas seulement un utilisateur authentifié côté navigateur).
+# À définir dans le .env du serveur ; la synchronisation est simplement
+# désactivée (aucune erreur) tant que ces deux valeurs ne sont pas fournies.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+
+# Notifications push (web push standard, pas de service tiers payant) —
+# clés générées une fois via generer_cles_vapid.py. Sans ces deux valeurs,
+# l'envoi est simplement désactivé (aucune erreur, aucun blocage). La clé
+# privée est une seule ligne base64url (DER brut) — PAS du PEM, que
+# py_vapid ne sait pas interpréter.
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_CLAIM_EMAIL = os.environ.get("VAPID_CLAIM_EMAIL", "florent.miguel@sasu-viti-sens.fr")
+
+def _supabase_actif():
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
+
+def _supabase_headers():
+    return {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+    }
+
+def envoyer_push(client_id, titre, corps, url="/"):
+    """Envoie une notification push à tous les appareils enregistrés de ce
+    client (il peut en avoir plusieurs). Un abonnement expiré ou révoqué
+    est automatiquement retiré de la base. Échoue toujours silencieusement
+    (clés VAPID absentes, client sans abonnement, erreur réseau) — ne doit
+    jamais faire échouer l'action qui déclenche la notification."""
+    if not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY):
+        return
+    try:
+        from pywebpush import webpush, WebPushException
+        import json as _json
+    except ImportError:
+        return
+    conn = get_db()
+    abonnements = conn.execute(
+        "SELECT * FROM push_subscriptions WHERE id_client=?", (client_id,)
+    ).fetchall()
+    for a in abonnements:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": a["endpoint"],
+                    "keys": {"p256dh": a["p256dh"], "auth": a["auth"]},
+                },
+                data=_json.dumps({"title": titre, "body": corps, "url": url}, ensure_ascii=False),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": f"mailto:{VAPID_CLAIM_EMAIL}"},
+            )
+        except WebPushException as e:
+            if e.response is not None and e.response.status_code in (404, 410):
+                conn.execute("DELETE FROM push_subscriptions WHERE id=?", (a["id"],))
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+def envoyer_push_admin(titre, corps, url="/mon-espace"):
+    """Envoie une notification push à Florent (tous ses appareils abonnés),
+    par exemple quand un client valide un traitement. Mêmes garanties que
+    envoyer_push : échoue toujours silencieusement."""
+    if not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY):
+        return
+    try:
+        from pywebpush import webpush, WebPushException
+        import json as _json
+    except ImportError:
+        return
+    conn = get_db()
+    abonnements = conn.execute("SELECT * FROM push_subscriptions_admin").fetchall()
+    for a in abonnements:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": a["endpoint"],
+                    "keys": {"p256dh": a["p256dh"], "auth": a["auth"]},
+                },
+                data=_json.dumps({"title": titre, "body": corps, "url": url}, ensure_ascii=False),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": f"mailto:{VAPID_CLAIM_EMAIL}"},
+            )
+        except WebPushException as e:
+            if e.response is not None and e.response.status_code in (404, 410):
+                conn.execute("DELETE FROM push_subscriptions_admin WHERE id=?", (a["id"],))
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+def racine_chercher_user_id_par_email(email):
+    """Cherche l'utilisateur Supabase (Racine by VITI Sens) correspondant à
+    cet e-mail. Retourne son UUID, ou None si introuvable, si l'e-mail est
+    vide, ou si Racine n'est pas configuré sur ce serveur."""
+    import requests
+    if not _supabase_actif() or not email:
+        return None
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
+            headers=_supabase_headers(), params={"email": email}, timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        users = data.get("users", data if isinstance(data, list) else [])
+        for u in users:
+            if (u.get("email") or "").strip().lower() == email.strip().lower():
+                return u.get("id")
+    except Exception:
+        pass
+    return None
+
+def racine_lire_payload(user_id):
+    """Lit le payload complet (parcelles, îlots, campagnes, passages...)
+    d'un client Racine. None si introuvable ou en cas d'erreur réseau."""
+    import requests
+    if not _supabase_actif() or not user_id:
+        return None
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/traca_data", headers=_supabase_headers(),
+            params={"user_id": f"eq.{user_id}", "select": "payload"}, timeout=10,
+        )
+        r.raise_for_status()
+        rows = r.json()
+        return rows[0]["payload"] if rows else None
+    except Exception:
+        return None
+
+def racine_ecrire_payload(user_id, payload):
+    """Remplace le payload complet d'un client Racine. Retourne True/False."""
+    import requests
+    if not _supabase_actif() or not user_id:
+        return False
+    try:
+        r = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/traca_data", headers=_supabase_headers(),
+            params={"user_id": f"eq.{user_id}"}, json={"payload": payload}, timeout=10,
+        )
+        r.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+def racine_lister_ilots(user_id):
+    """Noms des îlots déjà définis par ce client dans Racine. Liste vide si
+    aucun, si le client n'est pas lié, ou en cas d'erreur."""
+    payload = racine_lire_payload(user_id)
+    if not payload:
+        return []
+    return [i.get("nom") for i in (payload.get("ilots") or []) if i.get("nom")]
+
+def racine_ajouter_passage(user_id, campagne, date, produits, ilots_cibles, stade="", stade_lbl=""):
+    """Ajoute un passage par îlot ciblé (comme le fait Racine nativement
+    quand plusieurs îlots sont concernés par le même traitement), dans la
+    campagne en cours du client. Retourne True/False."""
+    payload = racine_lire_payload(user_id)
+    if payload is None:
+        return False
+    campagnes = payload.setdefault("campagnes", {})
+    camp = campagnes.setdefault(str(campagne), {})
+    camp.setdefault("passages", [])
+    import time
+    for ilot in (ilots_cibles or [None]):
+        camp["passages"].append({
+            "id": f"P{int(time.time()*1000)}_{ilot or 'defaut'}",
+            "date": date, "stade": stade, "stadeLbl": stade_lbl, "ilot": ilot,
+            "fd": False, "pluvio": "", "source": "pilot-sync", "produits": produits,
+        })
+    return racine_ecrire_payload(user_id, payload)
+
 # Mot de passe de l'espace admin (Florent) — obligatoire en production
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
@@ -413,6 +589,24 @@ def init_db():
         texte_phenologie TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_client TEXT NOT NULL,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_client) REFERENCES clients(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions_admin (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS suivi (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date_visite TEXT,
@@ -558,6 +752,10 @@ def init_db():
         "ALTER TABLE clients ADD COLUMN email TEXT",
         "ALTER TABLE clients ADD COLUMN telephone TEXT",
         "ALTER TABLE clients ADD COLUMN notes TEXT",
+        # Correspondance avec le compte Supabase du client sur Racine by VITI
+        # Sens — établie une fois par e-mail, puis conservée via cet
+        # identifiant stable (qui ne change jamais, contrairement à l'e-mail).
+        "ALTER TABLE clients ADD COLUMN racine_user_id TEXT",
         # Alignement du catalogue sur la base e-phy partagée avec Racine —
         # amm devient la clé de correspondance ; les champs réglementaires
         # supplémentaires (phrases H, CMR, substances déjà découpées pour
@@ -573,6 +771,12 @@ def init_db():
         "ALTER TABLE catalogue ADD COLUMN envf TEXT",
         "ALTER TABLE catalogue ADD COLUMN source_ephy INTEGER DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_catalogue_amm ON catalogue(amm)",
+        # Prescription par substance(s) active(s) : l'ensemble des substances
+        # prescrites (ex. ["cymoxanil","folpel"]) plutôt qu'un seul produit
+        # figé — la spécialité commerciale exacte n'est choisie qu'à la
+        # validation par le client, parmi tous les produits de composition
+        # identique.
+        "ALTER TABLE prescriptions ADD COLUMN substances_prescrites TEXT",
     ]:
         try: conn.execute(alter)
         except: pass
@@ -916,6 +1120,73 @@ def update_client(cid):
     conn.close()
     return jsonify({"status": "ok"})
 
+@app.route('/api/clients/<cid>/notifier-prescription', methods=['POST'])
+def notifier_prescription(cid):
+    """Envoie au client un e-mail récapitulant la ou les préconisations
+    qui viennent d'être enregistrées pour lui — un seul e-mail même si
+    plusieurs produits ont été prescrits en même temps."""
+    conn = get_db()
+    client = dict_from_row(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
+    conn.close()
+    if not client:
+        return jsonify({"error": "Client introuvable"}), 404
+    d = request.json or {}
+    passage = d.get("passage", "")
+    produits = d.get("produits", [])
+    if not produits:
+        return jsonify({"status": "skipped", "reason": "Aucun produit"})
+    lien = f"{DOMAIN}/portail/{client['portail_token']}" if client.get("portail_token") else f"{DOMAIN}/connexion"
+
+    # E-mail et push sont deux canaux indépendants — l'absence de l'un ne
+    # doit jamais empêcher l'autre (ex. un client sans e-mail renseigné
+    # peut quand même avoir activé les notifications push).
+    email = (client.get("email") or "").split(";")[0].strip()
+    if email:
+        lignes = "".join(
+            f'<li><strong>{p.get("cible","")}</strong> — {p.get("nom_produit","")} '
+            f'({p.get("dose_prescrite","")})</li>'
+            for p in produits
+        )
+        send_email_auto(email, f"Nouvelle préconisation — {passage} 🍇", f"""
+            <p>Bonjour,</p>
+            <p>Une nouvelle préconisation vient d'être enregistrée pour <strong>{client.get('exploitation','')}</strong> — passage <strong>{passage}</strong> :</p>
+            <ul>{lignes}</ul>
+            <p>Consultez le détail et validez le traitement une fois réalisé ici : <a href="{lien}">{lien}</a></p>
+            <p>À bientôt,<br>Florent — Pilot by VITI Sens</p>
+        """)
+
+    resume = ", ".join(f"{p.get('nom_produit','')}" for p in produits)
+    envoyer_push(cid, f"Nouvelle préconisation — {passage}", resume,
+                 url=f"/portail/{client['portail_token']}" if client.get("portail_token") else "/connexion")
+    return jsonify({"status": "ok"})
+
+@app.route('/api/clients/<cid>/lier-racine', methods=['POST'])
+def lier_client_racine(cid):
+    """Établit la correspondance avec le compte Racine by VITI Sens de ce
+    client, par e-mail — puis conserve son identifiant Supabase stable."""
+    if not _supabase_actif():
+        return jsonify({"error": "Racine n'est pas configuré sur ce serveur (SUPABASE_URL / SUPABASE_SERVICE_KEY manquants)"}), 400
+    conn = get_db()
+    client = dict_from_row(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
+    if not client:
+        conn.close(); return jsonify({"error": "Client introuvable"}), 404
+    email = (request.json or {}).get("email") or client.get("email")
+    if not email:
+        conn.close(); return jsonify({"error": "Aucun e-mail disponible pour ce client"}), 400
+    user_id = racine_chercher_user_id_par_email(email)
+    if not user_id:
+        conn.close(); return jsonify({"error": f"Aucun compte Racine trouvé pour {email}"}), 404
+    conn.execute("UPDATE clients SET racine_user_id=? WHERE id=?", (user_id, cid))
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok", "racine_user_id": user_id})
+
+@app.route('/api/clients/<cid>/delier-racine', methods=['POST'])
+def delier_client_racine(cid):
+    conn = get_db()
+    conn.execute("UPDATE clients SET racine_user_id=NULL WHERE id=?", (cid,))
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
 @app.route('/api/clients/<cid>', methods=['DELETE'])
 def delete_client(cid):
     conn = get_db()
@@ -1024,16 +1295,19 @@ def get_prescriptions():
 def create_prescription():
     d = request.json
     conn = get_db()
-    conn.execute("""INSERT INTO prescriptions
+    cur = conn.execute("""INSERT INTO prescriptions
         (id_client,cible,passage,id_produit,nom_produit,substance_active,type_cps,
-        dose_homologuee,dose_prescrite,volume_bouillie,date_prevue,observations,applique)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        dose_homologuee,dose_prescrite,volume_bouillie,date_prevue,observations,applique,
+        substances_prescrites)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (d.get('id_client'), d.get('cible'), d.get('passage'), d.get('id_produit'),
          d.get('nom_produit'), d.get('substance_active'), d.get('type_cps'),
          d.get('dose_homologuee'), d.get('dose_prescrite'), d.get('volume_bouillie'),
-         d.get('date_prevue'), d.get('observations'), d.get('applique','Non')))
+         d.get('date_prevue'), d.get('observations'), d.get('applique','Non'),
+         d.get('substances_prescrites')))
+    nouvel_id = cur.lastrowid
     conn.commit(); conn.close()
-    return jsonify({"status": "ok", "id": conn.execute("SELECT last_insert_rowid()").fetchone()})
+    return jsonify({"status": "ok", "id": nouvel_id})
 
 @app.route('/api/prescriptions/<int:pid>', methods=['PUT'])
 def update_prescription(pid):
@@ -3200,7 +3474,10 @@ def portail_valider_slug(slug):
         if not p: continue
         conn.execute("UPDATE prescriptions SET applique='Oui', date_reelle=?, dose_reelle=?, observations=? WHERE id=?",
             (date_str, j.get("dose_reelle",""), j.get("observations",""), pid))
-    conn.commit(); conn.close()
+    conn.commit()
+    _synchroniser_racine_apres_validation(client, presc_ids, j.get("ilots") or [], conn)
+    _notifier_admin_apres_validation(client, presc_ids, conn)
+    conn.close()
     return jsonify({"ok": True})
 
 @app.route('/api/portail-s/<slug>/docs')
@@ -3283,7 +3560,7 @@ def portail_catalogue_slug(slug):
     client = get_client_by_token_or_slug(slug)
     if not client: return jsonify({"error": "Lien invalide"}), 404
     certif = client.get("certification", "Conventionnel")
-    q = "SELECT id, nom, cible, substance_active, famille, type_cps, dose_homologuee, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
+    q = "SELECT id, nom, cible, substance_active, substances_parsees, famille, type_cps, dose_homologuee, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
     if certif == "Bio": q += " AND compatible_bio=1"
     elif certif == "HVE": q += " AND compatible_hve=1"
     conn = get_db()
@@ -3350,12 +3627,78 @@ def portail_catalogue(token):
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
     if not client: conn.close(); return jsonify({"error": "Token invalide"}), 404
     certif = client.get("certification", "Conventionnel")
-    q = "SELECT id, nom, cible, substance_active, famille, type_cps, dose_homologuee, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
+    q = "SELECT id, nom, cible, substance_active, substances_parsees, famille, type_cps, dose_homologuee, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
     if certif == "Bio": q += " AND compatible_bio=1"
     elif certif == "HVE": q += " AND compatible_hve=1"
     prods = dicts_from_rows(conn.execute(q + " ORDER BY cible, famille, nom").fetchall())
     conn.close()
     return jsonify({"produits": prods, "certification": certif})
+
+@app.route('/api/admin-vapid-public-key')
+def admin_vapid_public_key():
+    """Même clé publique que côté client — une seule paire de clés VAPID
+    sert tout le serveur, ce qui identifie Pilot auprès du service push,
+    pas qui s'abonne."""
+    return jsonify({"publicKey": VAPID_PUBLIC_KEY})
+
+@app.route('/api/admin-push-subscribe', methods=['POST'])
+def admin_push_subscribe():
+    """Enregistre l'abonnement push de Florent (protégé par la session
+    admin comme toute route /api/ non listée en accès public)."""
+    sub = (request.json or {}).get("subscription") or {}
+    endpoint = sub.get("endpoint")
+    keys = sub.get("keys") or {}
+    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        return jsonify({"error": "Abonnement incomplet"}), 400
+    conn = get_db()
+    conn.execute("""INSERT INTO push_subscriptions_admin (endpoint, p256dh, auth) VALUES (?,?,?)
+        ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth""",
+        (endpoint, keys["p256dh"], keys["auth"]))
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+@app.route('/api/portail/<token>/vapid-public-key')
+def portail_vapid_public_key(token):
+    """Clé publique nécessaire au navigateur pour s'abonner aux
+    notifications push — vide si elles ne sont pas configurées sur ce
+    serveur (le client ne proposera alors simplement pas l'activation)."""
+    return jsonify({"publicKey": VAPID_PUBLIC_KEY})
+
+@app.route('/api/portail/<token>/push-subscribe', methods=['POST'])
+def portail_push_subscribe(token):
+    """Enregistre l'abonnement push de cet appareil pour ce client. Un
+    même client peut avoir plusieurs appareils abonnés (téléphone,
+    ordinateur...) ; un même endpoint ne peut être lié qu'à un seul
+    client (il remplace l'ancien lien s'il existe déjà)."""
+    conn = get_db()
+    client = dict_from_row(conn.execute("SELECT id FROM clients WHERE portail_token=?", (token,)).fetchone())
+    if not client:
+        conn.close(); return jsonify({"error": "Token invalide"}), 404
+    sub = (request.json or {}).get("subscription") or {}
+    endpoint = sub.get("endpoint")
+    keys = sub.get("keys") or {}
+    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        conn.close(); return jsonify({"error": "Abonnement incomplet"}), 400
+    conn.execute("""INSERT INTO push_subscriptions (id_client, endpoint, p256dh, auth)
+        VALUES (?,?,?,?)
+        ON CONFLICT(endpoint) DO UPDATE SET id_client=excluded.id_client,
+            p256dh=excluded.p256dh, auth=excluded.auth""",
+        (client["id"], endpoint, keys["p256dh"], keys["auth"]))
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+@app.route('/api/portail/<token>/ilots-racine')
+def portail_ilots_racine(token):
+    """Liste des îlots déjà définis par ce client dans Racine by VITI Sens —
+    utilisée pour lui demander lequel est concerné avant de valider un
+    traitement, uniquement si le client est lié et a plusieurs îlots."""
+    conn = get_db()
+    client = dict_from_row(conn.execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
+    conn.close()
+    if not client: return jsonify({"error": "Token invalide"}), 404
+    if not client.get("racine_user_id"):
+        return jsonify({"ilots": [], "lie": False})
+    return jsonify({"ilots": racine_lister_ilots(client["racine_user_id"]), "lie": True})
 
 @app.route('/api/portail/<token>/modifier-prescription', methods=['POST'])
 def portail_modifier_prescription(token):
@@ -3381,6 +3724,70 @@ def portail_modifier_prescription(token):
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": f"Produit modifié → {cat['nom']}"})
 
+
+def _notifier_admin_apres_validation(client, presc_ids, conn):
+    """Prévient Florent par push qu'un client vient de valider un
+    traitement. Échoue toujours silencieusement — ne doit jamais bloquer
+    la validation côté client."""
+    try:
+        placeholders = ",".join("?" * len(presc_ids))
+        rows = conn.execute(
+            f"SELECT nom_produit, passage FROM prescriptions WHERE id IN ({placeholders})",
+            presc_ids
+        ).fetchall()
+        if not rows:
+            return
+        produits = ", ".join(r["nom_produit"] or "?" for r in rows)
+        passage = rows[0]["passage"] or ""
+        envoyer_push_admin(
+            f"{client.get('exploitation','Un client')} a validé {passage}",
+            produits,
+            url="/mon-espace",
+        )
+    except Exception:
+        pass
+
+def _synchroniser_racine_apres_validation(client, presc_ids, ilots_cibles, conn):
+    """Après validation d'un ou plusieurs traitements côté client, pousse
+    l'information vers Racine by VITI Sens si ce client y est lié. Échoue
+    toujours silencieusement (ne doit jamais faire échouer la validation
+    côté Pilot) — Racine non configuré, client non lié, ou erreur réseau
+    sont tous des cas que les fonctions racine_* gèrent déjà en retournant
+    simplement None/False plutôt qu'en levant une exception."""
+    if not client.get("racine_user_id") or not presc_ids:
+        return
+    try:
+        placeholders = ",".join("?" * len(presc_ids))
+        rows = conn.execute(
+            f"""SELECT p.*, c.amm AS cat_amm, c.dar AS cat_dar, c.znt AS cat_znt
+                FROM prescriptions p LEFT JOIN catalogue c ON c.id = p.id_produit
+                WHERE p.id IN ({placeholders})""", presc_ids
+        ).fetchall()
+        if not rows:
+            return
+        produits, date_reelle = [], None
+        for row in rows:
+            r = dict(row)
+            produits.append({
+                "n": r.get("nom_produit") or "", "amm": r.get("cat_amm") or "",
+                "sa": r.get("substance_active") or "", "f": "",
+                "type": r.get("type_cps") or "", "cible": r.get("cible") or "",
+                "doseHom": r.get("dose_homologuee") or "",
+                "doseAppli": r.get("dose_reelle") or r.get("dose_prescrite") or "",
+                "dar": r.get("cat_dar") or "", "znt": r.get("cat_znt") or "",
+                "obs": r.get("observations") or "",
+            })
+            if not date_reelle:
+                date_reelle = r.get("date_reelle")
+        import json as _json
+        try:
+            dates = _json.loads(date_reelle) if date_reelle and date_reelle.startswith("[") else [date_reelle]
+        except Exception:
+            dates = [date_reelle]
+        date_sync = (dates[0] if dates else None) or datetime.now().strftime("%Y-%m-%d")
+        racine_ajouter_passage(client["racine_user_id"], datetime.now().year, date_sync, produits, ilots_cibles)
+    except Exception:
+        pass  # la synchronisation Racine ne doit jamais bloquer Pilot
 
 def _annuler_passage(client_id, passage, motif, conn):
     """
@@ -3516,7 +3923,10 @@ def portail_valider(token):
         if not p: continue
         conn.execute("UPDATE prescriptions SET applique='Oui', date_reelle=?, dose_reelle=?, observations=? WHERE id=?",
             (date_str, j.get("dose_reelle",""), j.get("observations",""), pid))
-    conn.commit(); conn.close()
+    conn.commit()
+    _synchroniser_racine_apres_validation(client, presc_ids, j.get("ilots") or [], conn)
+    _notifier_admin_apres_validation(client, presc_ids, conn)
+    conn.close()
     return jsonify({"ok": True, "message": "Traitement validé"})
 @app.route('/api/portail/<token>/bulletin-pdf')
 def portail_bulletin_pdf(token):

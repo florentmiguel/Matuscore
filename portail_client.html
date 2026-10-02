@@ -596,6 +596,12 @@ textarea{min-height:60px}
   <div class="card">
    <div style="font-size:11px;font-weight:600;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">⚙️ Réglages & Gestion</div>
    <div style="margin-bottom:16px;border-bottom:.5px solid #f0ede8;padding-bottom:14px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">🔔 Notifications</div>
+    <div style="font-size:11px;color:var(--gr);margin-bottom:10px">Reçois une alerte sur ce téléphone dès qu'une nouvelle préconisation est enregistrée pour toi.</div>
+    <button id="btn-notif" onclick="activerNotifications()" style="width:100%;padding:9px;background:var(--gd);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Activer les notifications</button>
+    <div id="notif-msg" style="font-size:11px;min-height:16px;margin-top:6px;color:var(--gr)"></div>
+   </div>
+   <div style="margin-bottom:16px;border-bottom:.5px solid #f0ede8;padding-bottom:14px">
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">🔒 Mot de passe</div>
     <div style="font-size:11px;color:var(--gr);margin-bottom:10px">Change le mot de passe utilisé pour te connecter sur /connexion.</div>
     <form id="form-mdp" autocomplete="off" onsubmit="reglagesChangerMdp(event)">
@@ -645,6 +651,62 @@ var PATH = window.location.pathname;
 var IS_SLUG = PATH.startsWith('/portail-s/');
 var TOKEN = PATH.split('/').pop();
 var API_BASE = IS_SLUG ? `/api/portail-s/${TOKEN}` : `/api/portail/${TOKEN}`;
+// Enregistrement du service worker — jamais fait jusqu'ici dans cette page,
+// ce qui empêchait aussi bien le fonctionnement hors-ligne que les
+// notifications push de s'activer réellement.
+if ('serviceWorker' in navigator) {
+ navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+
+function _urlBase64ToUint8Array(base64String){
+ const padding='='.repeat((4-base64String.length%4)%4);
+ const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+ const raw=atob(base64);
+ return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+
+async function _etatNotifications(){
+ const btn=document.getElementById('btn-notif'), msg=document.getElementById('notif-msg');
+ if(!btn) return;
+ if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)){
+  btn.disabled=true; btn.textContent='Non disponible sur cet appareil';
+  msg.textContent="Ce navigateur ne permet pas les notifications push.";
+  return;
+ }
+ if(Notification.permission==='denied'){
+  btn.disabled=true; btn.textContent='Notifications bloquées';
+  msg.textContent="Vous avez refusé les notifications — réactivez-les dans les réglages de votre navigateur si besoin.";
+  return;
+ }
+ const reg=await navigator.serviceWorker.ready;
+ const sub=await reg.pushManager.getSubscription();
+ if(sub){
+  btn.textContent='✅ Notifications activées'; btn.disabled=true;
+  msg.textContent="Vous recevrez une alerte sur cet appareil à chaque nouvelle préconisation.";
+ }
+}
+
+async function activerNotifications(){
+ const msg=document.getElementById('notif-msg');
+ try{
+  const permission=await Notification.requestPermission();
+  if(permission!=='granted'){ msg.textContent="Notifications non autorisées."; return; }
+  const r=await fetch(`${API_BASE}/vapid-public-key`);
+  const {publicKey}=await r.json();
+  if(!publicKey){ msg.textContent="Notifications non configurées pour l'instant."; return; }
+  const reg=await navigator.serviceWorker.ready;
+  const sub=await reg.pushManager.subscribe({
+   userVisibleOnly:true,
+   applicationServerKey:_urlBase64ToUint8Array(publicKey),
+  });
+  await fetch(`${API_BASE}/push-subscribe`,{
+   method:'POST', headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({subscription:sub.toJSON()}),
+  });
+  await _etatNotifications();
+ }catch(e){ msg.textContent="Erreur lors de l'activation — réessayez."; }
+}
+
 var DATA = null;
 
 // ── Essai gratuit : bannière + blocage fonctionnalités (SaaS) ────────────
@@ -1066,7 +1128,7 @@ function renderHistorique(){
         ?`<span style="color:#9E9E9E;font-size:11px">✗ Annulé</span>`
         :done
         ?`<span style="color:#2E7D32;font-size:12px;font-weight:600">✅ Fait${p.date_reelle?' le '+fmtDates(p.date_reelle):''}</span>`
-        :`<button onclick="showValidation(${p.id},'${(p.nom_produit||'').replace(/'/g,"\\'")}')" style="background:var(--gm);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">✅ Valider</button>`
+        :`<span style="color:var(--gr);font-size:11px">⏳ En attente — à valider depuis l'onglet Traitements</span>`
        }
       </div>
      </div>
@@ -1076,25 +1138,6 @@ function renderHistorique(){
   }
  }
  document.getElementById('histoList').innerHTML=h;
-}
-
-function showValidation(prescId, produit){
- const today = new Date().toISOString().slice(0,10);
- document.getElementById('modalContent').innerHTML=`
-  <h3 style="color:var(--gd);margin-bottom:4px">Valider le traitement</h3>
-  <p style="font-size:13px;margin-bottom:12px"><strong>${produit}</strong></p>
-  <label style="font-size:12px;color:var(--gr);margin-bottom:6px;display:block">Date(s) du traitement</label>
-  <div id="cal-container"></div>
-  <div id="cal-recap" style="border-radius:6px;padding:7px 10px;font-size:11px;margin-bottom:12px;background:var(--gbg);color:var(--gr)">Sélectionnez une ou plusieurs dates</div>
-  <label style="font-size:12px;color:var(--gr)">Dose réellement appliquée (optionnel)</label>
-  <input id="v_dose" placeholder="Ex: 1.5 kg/ha">
-  <label style="font-size:12px;color:var(--gr)">Observations (optionnel)</label>
-  <textarea id="v_obs" placeholder="Conditions d'application, remarques..."></textarea>
-  <button class="btn btn-success" id="cal-confirm-btn" onclick="validerTraitement(${prescId})" disabled style="opacity:.5">Confirmer</button>
-  <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
- `;
- document.getElementById('modal').style.display='block';
- initCal([]);
 }
 
 function closeModal(){document.getElementById('modal').style.display='none';}
@@ -1140,16 +1183,49 @@ async function execAnnulerPassage(passage){
  }catch(e){alert('Erreur de connexion');}
 }
 
+// Cache du catalogue client, chargé une seule fois (utilisé pour la
+// correspondance stricte par substance, aussi bien pour la modale
+// obligatoire à la validation que pour "Modifier le produit").
+let _catalogueClientCache = null;
+async function _chargerCatalogueClient(){
+ if(_catalogueClientCache) return _catalogueClientCache;
+ const r = await fetch(`${API_BASE}/catalogue`);
+ _catalogueClientCache = await r.json();
+ return _catalogueClientCache;
+}
+
+function _parseSubstances(p){
+ try{ return JSON.parse(p.substances_parsees||'[]'); }catch(e){ return []; }
+}
+
+// Produits dont la composition correspond EXACTEMENT (mêmes substances,
+// ni plus ni moins) à l'ensemble prescrit.
+function _produitsCorrespondantExactement(produits, substancesPrescrites){
+ const voulu = [...substancesPrescrites].map(s=>s.toLowerCase()).sort().join('|');
+ return produits.filter(p=>{
+  const presentes = _parseSubstances(p).map(s=>s.toLowerCase()).sort().join('|');
+  return presentes === voulu;
+ });
+}
+
 async function showChangeProduit(prescId, cible, produitActuel){
  // Charger le catalogue filtré
- const r = await fetch(`${API_BASE}/catalogue`);
- const data = await r.json();
- const prods = (data.produits||[]).filter(p => cible ? (p.cible||'').toLowerCase().includes(cible.toLowerCase()) : true);
+ const data = await _chargerCatalogueClient();
+ // Si la prescription porte un ensemble de substances précis, restreindre
+ // les choix aux seuls produits de composition identique.
+ const presc = (DATA.all_prescriptions||[]).find(p=>p.id===prescId);
+ let substancesPrescrites = [];
+ try{ substancesPrescrites = presc?.substances_prescrites ? JSON.parse(presc.substances_prescrites) : []; }catch(e){}
+ const prods = substancesPrescrites.length
+  ? _produitsCorrespondantExactement(data.produits||[], substancesPrescrites)
+  : (data.produits||[]).filter(p => cible ? (p.cible||'').toLowerCase().includes(cible.toLowerCase()) : true);
  const certif = data.certification;
 
- // Grouper par cible
+ // Grouper par cible — uniquement parmi les produits déjà retenus (prods),
+ // qui sont soit filtrés par cible, soit restreints à la composition exacte
+ // prescrite selon le cas (voir plus haut).
  const parCible = {};
- (data.produits||[]).forEach(p=>{
+ prods.forEach(p=>{
   const c = p.cible||'Autre';
   if(!parCible[c]) parCible[c]=[];
   parCible[c].push(p);
@@ -1157,10 +1233,9 @@ async function showChangeProduit(prescId, cible, produitActuel){
 
  let options='<option value="">— Sélectionner votre produit —</option>';
  for(const [cib, plist] of Object.entries(parCible)){
-  const match = !cible || cib.toLowerCase().includes(cible.toLowerCase());
-  options+=`<optgroup label="${cib}" ${match?'':'style="color:#9CA3AF"'}>`;
+  options+=`<optgroup label="${cib}">`;
   plist.forEach(p=>{
-   options+=`<option value="${p.id}" data-dh="${p.dose_homologuee||''}" ${match?'':'style="color:#9CA3AF"'}>${p.nom} — ${p.substance_active||'?'}</option>`;
+   options+=`<option value="${p.id}" data-dh="${p.dose_homologuee||''}">${p.nom} — ${p.substance_active||'?'}</option>`;
   });
   options+='</optgroup>';
  }
@@ -1168,6 +1243,7 @@ async function showChangeProduit(prescId, cible, produitActuel){
  document.getElementById('modalContent').innerHTML=`
   <h3 style="color:var(--gd);margin-bottom:4px">🔄 Changer de produit</h3>
   <p style="font-size:11px;color:var(--gr);margin-bottom:12px">Certification : <strong>${certif}</strong> — Seuls les produits compatibles sont proposés.</p>
+  ${substancesPrescrites.length?`<p style="font-size:11px;color:var(--gr);margin-bottom:8px">Votre conseiller a prescrit <strong>${substancesPrescrites.join(' + ')}</strong> — seules les spécialités ayant exactement cette composition sont proposées.</p>`:''}
   <p style="font-size:12px;margin-bottom:8px">Produit actuel : <strong>${produitActuel}</strong></p>
   <label style="font-size:12px;color:var(--gr)">Nouveau produit</label>
   <select id="cp_prod" onchange="document.getElementById('cp_dose').value=this.options[this.selectedIndex].dataset.dh||''" style="margin-bottom:8px">${options}</select>
@@ -1200,8 +1276,104 @@ async function confirmerChangeProduit(prescId){
  }catch(e){alert('Erreur de connexion');}
 }
 
+// Avant de valider : si une ou plusieurs prescriptions du passage portent un
+// ensemble de substances (pas un produit figé) ET que plusieurs spécialités
+// commerciales y correspondent exactement, le client DOIT choisir laquelle
+// avant de pouvoir continuer — on ne laisse jamais un produit par défaut
+// être validé silencieusement dans ce cas.
 async function validerPassage(ids){
- const today = new Date().toISOString().slice(0,10);
+ const data = await _chargerCatalogueClient();
+ const ambigues = [];
+ for(const id of ids){
+  const presc = (DATA.all_prescriptions||[]).find(p=>p.id===id);
+  let substances = [];
+  try{ substances = presc?.substances_prescrites ? JSON.parse(presc.substances_prescrites) : []; }catch(e){}
+  if(!substances.length) continue;
+  const matches = _produitsCorrespondantExactement(data.produits||[], substances);
+  if(matches.length > 1) ambigues.push({id, substances, matches, nomActuel: presc.nom});
+ }
+ if(ambigues.length){
+  _resoudreSpecialites(ids, ambigues, 0);
+  return;
+ }
+ await _verifierIlotsAvantValidation(ids);
+}
+
+// Si ce client est lié à Racine et y a défini plusieurs îlots, lui demander
+// lequel (ou lesquels) sont concernés avant de continuer — nécessaire pour
+// que la synchronisation sache où ranger le traitement. Un seul îlot (ou
+// aucun lien à Racine) : rien à demander, on continue directement.
+let _ilotsChoisisPourValidation = [];
+async function _verifierIlotsAvantValidation(ids){
+ _ilotsChoisisPourValidation = [];
+ try{
+  const r = await fetch(`${API_BASE}/ilots-racine`);
+  const d = await r.json();
+  if(d.lie && (d.ilots||[]).length > 1){
+   _choisirIlots(ids, d.ilots);
+   return;
+  }
+  if(d.lie && (d.ilots||[]).length === 1) _ilotsChoisisPourValidation = d.ilots;
+ }catch(e){ /* Racine indisponible : on continue sans bloquer Pilot */ }
+ _afficherCalendrierValidation(ids);
+}
+
+function _choisirIlots(ids, ilots){
+ const optionsHtml = ilots.map(nom=>
+  `<label style="display:flex;align-items:center;gap:8px;padding:8px;border:1.5px solid #e5e7eb;border-radius:6px;margin-bottom:6px;cursor:pointer">
+    <input type="checkbox" name="choixIlot" value="${nom}" style="flex-shrink:0">
+    <span>${nom}</span>
+   </label>`).join('');
+ document.getElementById('modalContent').innerHTML=`
+  <h3 style="color:var(--gd);margin-bottom:4px">📍 Quel(s) îlot(s) sont concernés ?</h3>
+  <p style="font-size:12px;color:var(--gr);margin-bottom:10px">Vous avez plusieurs îlots dans Racine — cochez celui ou ceux où ce traitement a été réalisé.</p>
+  <div id="choixIlotList">${optionsHtml}</div>
+  <button class="btn btn-success" style="margin-top:8px" onclick="_confirmerIlots(${JSON.stringify(ids)})">Continuer</button>
+ `;
+ document.getElementById('modal').style.display='block';
+}
+
+function _confirmerIlots(ids){
+ const coches = [...document.querySelectorAll('input[name="choixIlot"]:checked')].map(c=>c.value);
+ if(!coches.length){ alert('Sélectionnez au moins un îlot'); return; }
+ _ilotsChoisisPourValidation = coches;
+ _afficherCalendrierValidation(ids);
+}
+
+function _resoudreSpecialites(ids, ambigues, index){
+ if(index >= ambigues.length){
+  _afficherCalendrierValidation(ids);
+  return;
+ }
+ const courant = ambigues[index];
+ const optionsHtml = courant.matches.map(p=>
+  `<label style="display:flex;align-items:center;gap:8px;padding:8px;border:1.5px solid #e5e7eb;border-radius:6px;margin-bottom:6px;cursor:pointer">
+    <input type="radio" name="choixSpecialite" value="${p.id}" style="flex-shrink:0">
+    <span>${p.nom}</span>
+   </label>`).join('');
+ document.getElementById('modalContent').innerHTML=`
+  <h3 style="color:var(--gd);margin-bottom:4px">🧪 Choisissez votre spécialité</h3>
+  <p style="font-size:12px;color:var(--gr);margin-bottom:10px">Votre conseiller a prescrit <strong>${courant.substances.join(' + ')}</strong> — plusieurs spécialités correspondent exactement. Indiquez celle que vous utilisez réellement.</p>
+  <div id="choixSpecialiteList">${optionsHtml}</div>
+  <button class="btn btn-success" style="margin-top:8px" onclick="_confirmerSpecialite(${JSON.stringify(ids)},${JSON.stringify(ambigues)},${index})">Continuer</button>
+ `;
+ document.getElementById('modal').style.display='block';
+}
+
+async function _confirmerSpecialite(ids, ambigues, index){
+ const choix = document.querySelector('input[name="choixSpecialite"]:checked');
+ if(!choix){ alert('Sélectionnez une spécialité pour continuer'); return; }
+ const courant = ambigues[index];
+ try{
+  await fetch(`${API_BASE}/modifier-prescription`,{
+   method:'POST', headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({prescription_id:courant.id, id_produit:choix.value, dose_prescrite:''})
+  });
+ }catch(e){ alert('Erreur lors de l\'enregistrement du choix'); return; }
+ _resoudreSpecialites(ids, ambigues, index+1);
+}
+
+function _afficherCalendrierValidation(ids){
  document.getElementById('modalContent').innerHTML=`
   <h3 style="color:var(--gd);margin-bottom:4px">Valider le passage</h3>
   <p style="font-size:13px;margin-bottom:12px;color:var(--gr)">${ids.length} produit(s) — sélectionnez une ou plusieurs dates</p>
@@ -1227,40 +1399,11 @@ async function execValiderPassage(ids){
    fetch(`${API_BASE}/valider`,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({prescription_ids:[id],dates:dates,dose_reelle:'',observations:obs})
+    body:JSON.stringify({prescription_ids:[id],dates:dates,dose_reelle:'',observations:obs,ilots:_ilotsChoisisPourValidation})
    })
   ));
   await loadData();
  }catch(e){alert('Erreur lors de la validation');}
-}
-
-async function validerTraitement(prescId){
- const dates=getSelectedDates();
- if(!dates.length){alert('Sélectionnez au moins une date');return;}
- try{
-  const r=await fetch(`${API_BASE}/valider`,{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({
-    prescription_ids:[prescId],
-    dates:dates,
-    dose_reelle:document.getElementById('v_dose').value,
-    observations:document.getElementById('v_obs').value
-   })
-  });
-  const d=await r.json();
-  if(d.ok){
-   closeModal();
-   await loadData();
-   // Rester sur l'onglet actif (traitements ou historique)
-   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('act'));
-   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-   const activeTab=document.querySelector('.tab.was-active')||document.querySelectorAll('.tab')[2];
-   activeTab.classList.add('act');
-   const secId='sec-'+(activeTab.textContent.includes('Hist')?'historique':'traitements');
-   document.getElementById(secId).classList.add('active');
-  }else{alert('Erreur: '+(d.error||'inconnu'));}
- }catch(e){console.error('Erreur validation:',e);}
 }
 
 function downloadPDF(){
@@ -1296,6 +1439,7 @@ async function renderDocuments(){
 }
 
 loadData();
+_etatNotifications();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>

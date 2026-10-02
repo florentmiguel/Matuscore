@@ -118,9 +118,12 @@ init();
 async function loadClients(){
  CLIENTS=await aj('/api/clients');
  let h='<div class="card"><div class="ct"><span>👥 Clients</span><button class="btn bg btn-sm" onclick="showCF()">+ Ajouter</button></div>';
- h+='<table><tr><th>ID</th><th>Exploitation</th><th>Commune</th><th>Certif.</th><th>Surface</th><th>Tél.</th><th>Cu</th><th>Actions</th></tr>';
+ h+='<table><tr><th>ID</th><th>Exploitation</th><th>Commune</th><th>Certif.</th><th>Surface</th><th>Tél.</th><th>Cu</th><th>Racine</th><th>Actions</th></tr>';
  CLIENTS.forEach(c=>{const bc=c.certification==='Bio'?'b-bio':c.certification==='HVE'?'b-hve':c.certification==='VDC'?'b-vdc':'b-conv';
-  h+=`<tr><td>${c.id}</td><td><strong>${c.exploitation}</strong></td><td>${c.commune||''}</td><td><span class="badge ${bc}">${c.certification||'Conv.'}</span></td><td>${c.surface||''} ha</td><td style="font-size:9px">${c.telephone||'—'}</td><td>${c.certification==='Bio'?(c.cu_cumule||0)+' g/ha':'—'}</td><td><button class="btn btn-sm bg" onclick="editC('${c.id}')">✏️</button> <button class="btn btn-sm btn-del" onclick="delC('${c.id}')">🗑</button></td></tr>`;
+  const racineTd=c.racine_user_id
+   ?`🔗 <button class="btn btn-sm" style="background:#f3f4f6;font-size:9px" onclick="delierRacine('${c.id}')">Délier</button>`
+   :`<button class="btn btn-sm" style="background:var(--bbg);color:var(--bl);font-size:9px" onclick="lierRacine('${c.id}')">Lier</button>`;
+  h+=`<tr><td>${c.id}</td><td><strong>${c.exploitation}</strong></td><td>${c.commune||''}</td><td><span class="badge ${bc}">${c.certification||'Conv.'}</span></td><td>${c.surface||''} ha</td><td style="font-size:9px">${c.telephone||'—'}</td><td>${c.certification==='Bio'?(c.cu_cumule||0)+' g/ha':'—'}</td><td>${racineTd}</td><td><button class="btn btn-sm bg" onclick="editC('${c.id}')">✏️</button> <button class="btn btn-sm btn-del" onclick="delC('${c.id}')">🗑</button></td></tr>`;
  });h+='</table></div>';document.getElementById('tc-clients').innerHTML=h;
 }
 function showCF(d){d=d||{};document.getElementById('MC').innerHTML=`<h3>${d.id?'Modifier':'Ajouter'} client</h3>
@@ -140,6 +143,21 @@ async function editC(id){showCF(CLIENTS.find(c=>c.id===id));}
 async function saveC(eid){const d={id:document.getElementById('cf_id').value,exploitation:document.getElementById('cf_exp').value,interlocuteur:document.getElementById('cf_int').value,commune:document.getElementById('cf_com').value,certification:document.getElementById('cf_cert').value,surface:parseFloat(document.getElementById('cf_sur').value)||0,pct_chard:parseFloat(document.getElementById('cf_ch').value)||0,pct_pn:parseFloat(document.getElementById('cf_pn').value)||0,pct_meunier:parseFloat(document.getElementById('cf_me').value)||0,cu_cumule:parseFloat(document.getElementById('cf_cu').value)||0,parcelles_mildiou:document.getElementById('cf_pm').value,parcelles_oidium:document.getElementById('cf_po').value,email:document.getElementById('cf_em').value,telephone:document.getElementById('cf_tel').value,latitude:parseFloat(document.getElementById('cf_lat').value)||null,longitude:parseFloat(document.getElementById('cf_lon').value)||null,notes:document.getElementById('cf_no').value};
 if(eid)await api(`/api/clients/${eid}`,{method:'PUT',body:JSON.stringify(d)});else await api('/api/clients',{method:'POST',body:JSON.stringify(d)});closeModal();loadClients();init();}
 async function delC(id){if(confirm('Supprimer '+id+' ?')){await api(`/api/clients/${id}`,{method:'DELETE'});loadClients();init();}}
+
+async function lierRacine(id){
+ const c=CLIENTS.find(x=>x.id===id);
+ const email=prompt('E-mail du compte Racine by VITI Sens de ce client :', c?.email||'');
+ if(!email) return;
+ const r=await fetch(`/api/clients/${id}/lier-racine`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+ const d=await r.json();
+ if(d.status==='ok'){alert('Client lié à Racine ✓');loadClients();}
+ else alert('Erreur : '+(d.error||'inconnue'));
+}
+async function delierRacine(id){
+ if(!confirm('Délier ce client de Racine ? La synchronisation sera suspendue pour lui.')) return;
+ await fetch(`/api/clients/${id}/delier-racine`,{method:'POST'});
+ loadClients();
+}
 
 // ===== CATALOGUE =====
 async function loadCat(){
@@ -306,6 +324,60 @@ async function loadPresc(){
  });h+=`</table><p style="margin-top:6px;font-size:10px;color:var(--gr)">${presc.length} prescription(s) sur ${allPresc.length}</p></div>`;
  document.getElementById('tc-prescriptions').innerHTML=h;
 }
+// Enregistrement du service worker — nécessaire pour recevoir les
+// notifications push sur ce dashboard (jamais fait jusqu'ici).
+if ('serviceWorker' in navigator) {
+ navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+
+function _urlBase64ToUint8ArrayAdmin(base64String){
+ const padding='='.repeat((4-base64String.length%4)%4);
+ const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+ const raw=atob(base64);
+ return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+
+async function _etatNotificationsAdmin(){
+ const btn=document.getElementById('btn-notif-admin'), msg=document.getElementById('notif-admin-msg');
+ if(!btn) return;
+ if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)){
+  btn.disabled=true; btn.textContent='Non disponible sur cet appareil';
+  return;
+ }
+ if(Notification.permission==='denied'){
+  btn.disabled=true; btn.textContent='Notifications bloquées';
+  msg.textContent="Réactivez-les dans les réglages de votre navigateur si besoin.";
+  return;
+ }
+ const reg=await navigator.serviceWorker.ready;
+ const sub=await reg.pushManager.getSubscription();
+ if(sub){
+  btn.textContent='✅ Notifications activées'; btn.disabled=true;
+  msg.textContent="Vous serez alerté sur cet appareil à chaque validation client.";
+ }
+}
+
+async function activerNotificationsAdmin(){
+ const msg=document.getElementById('notif-admin-msg');
+ try{
+  const permission=await Notification.requestPermission();
+  if(permission!=='granted'){ msg.textContent="Notifications non autorisées."; return; }
+  const r=await fetch('/api/admin-vapid-public-key');
+  const {publicKey}=await r.json();
+  if(!publicKey){ msg.textContent="Notifications non configurées pour l'instant."; return; }
+  const reg=await navigator.serviceWorker.ready;
+  const sub=await reg.pushManager.subscribe({
+   userVisibleOnly:true,
+   applicationServerKey:_urlBase64ToUint8ArrayAdmin(publicKey),
+  });
+  await fetch('/api/admin-push-subscribe',{
+   method:'POST', headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({subscription:sub.toJSON()}),
+  });
+  await _etatNotificationsAdmin();
+ }catch(e){ msg.textContent="Erreur lors de l'activation — réessayez."; }
+}
+
 let CATALOGUE=[];
 async function loadCatalogueCache(){CATALOGUE=await aj('/api/catalogue');}
 loadCatalogueCache();
@@ -380,20 +452,23 @@ function xfAddProdRow(n){
  </div>
  <div class="fg fg3">
   <div><label>Cible</label><select id="xf_ci${n}" onchange="xfUpdateFamilles(${n})"><option>Mildiou</option><option>Oïdium</option><option>Botrytis</option><option>Tordeuses</option><option>Flavescence dorée</option><option>Nutrition</option><option>Correction carence</option><option>Anti-stress</option><option>Floraison-nouaison</option><option>Fertilisant foliaire</option><option>Biostimulant</option></select></div>
-  <div><label>Famille chimique</label><select id="xf_fm${n}" onchange="xfUpdateMolecules(${n})"><option value="">— Toutes —</option></select></div>
-  <div><label>Molécule (SA)</label><select id="xf_mo${n}" onchange="xfUpdatePartenaires(${n})"><option value="">— Toutes —</option></select></div>
-  <div><label>Partenaire de mélange</label><select id="xf_pa2${n}" onchange="xfUpdateSpecialites(${n})"><option value="">— Tous —</option></select></div>
-  <div><label>Spécialité commerciale</label><select id="xf_pr${n}" onchange="xfFillRow(${n})"><option value="">— Choisir —</option></select></div>
+  <div style="grid-column:span 2;position:relative">
+   <label>Recherche — spécialité commerciale OU substance active</label>
+   <input id="xf_search${n}" placeholder="ex: folpel, ou AMAROK..." oninput="xfRechercheUnifiee(${n})" autocomplete="off">
+   <div id="xf_resultats${n}" style="position:absolute;z-index:20;background:#fff;border:1px solid #d1d5db;border-radius:0 0 6px 6px;max-height:220px;overflow-y:auto;width:100%;display:none"></div>
+  </div>
   <div><label>DOSE PRESCRITE</label><input id="xf_dp${n}" style="border-color:var(--rd);font-weight:700" placeholder="Votre dose"></div>
  </div>
+ <div id="xf_info${n}" style="margin-top:4px;font-size:10px;color:var(--gr);min-height:14px"></div>
  <div class="fg" style="margin-top:4px">
   <div><label>SA (auto)</label><input id="xf_sa${n}" readonly style="background:#f3f4f6;font-size:10px"></div>
   <div><label>Type (auto)</label><input id="xf_ty${n}" readonly style="background:#f3f4f6"></div>
   <div><label>Dose homol. (auto)</label><input id="xf_dh${n}" readonly style="background:#f3f4f6"></div>
   <div><label>Famille (auto)</label><input id="xf_fam${n}" readonly style="background:#f3f4f6;font-size:10px"></div>
- </div>`;
+ </div>
+ <select id="xf_pr${n}" style="display:none"><option value="">— Choisir —</option></select>
+ <input type="hidden" id="xf_substances${n}" value="">`;
  container.appendChild(div);
- xfUpdateFamilles(n);
 }
 
 function xfRemoveRow(n){
@@ -465,71 +540,82 @@ function xfGetFiltered(n){
  });
 }
 
-function xfUpdateFamilles(n){
- const prods=xfGetFiltered(n);
- const famSel=document.getElementById('xf_fm'+n);
- if(!famSel) return;
- famSel.innerHTML='<option value="">— Toutes —</option>';
- const familles=[...new Set(prods.map(p=>p.famille||'Non classé'))].sort();
- familles.forEach(f=>{famSel.innerHTML+=`<option>${f}</option>`;});
- xfUpdateMolecules(n);
+let _xfGroupes={}; // cache des regroupements par composition, par ligne (n)
+
+function _xfSubstances(p){
+ try{ return JSON.parse(p.substances_parsees||'[]'); }catch(e){ return []; }
 }
 
-function xfUpdateMolecules(n){
+function xfRechercheUnifiee(n){
+ const mot=(document.getElementById('xf_search'+n).value||'').trim().toLowerCase();
+ const resDiv=document.getElementById('xf_resultats'+n);
+ if(!mot){ resDiv.style.display='none'; resDiv.innerHTML=''; return; }
  const prods=xfGetFiltered(n);
- const fam=document.getElementById('xf_fm'+n)?.value||'';
- const filtered=fam?prods.filter(p=>(p.famille||'Non classé')===fam):prods;
- const moSel=document.getElementById('xf_mo'+n);
- if(!moSel) return;
- moSel.innerHTML='<option value="">— Toutes —</option>';
- const mols=[...new Set(filtered.map(p=>p.substance_active||'?'))].sort();
- mols.forEach(m=>{moSel.innerHTML+=`<option>${m}</option>`;});
- xfUpdatePartenaires(n);
-}
 
-function xfUpdatePartenaires(n){
- const prods=xfGetFiltered(n);
- const fam=document.getElementById('xf_fm'+n)?.value||'';
- const mol=document.getElementById('xf_mo'+n)?.value||'';
- let filtered=prods;
- if(fam) filtered=filtered.filter(p=>(p.famille||'Non classé')===fam);
- if(mol) filtered=filtered.filter(p=>(p.substance_active||'')==mol);
- const paSel=document.getElementById('xf_pa2'+n);
- if(!paSel) return;
- paSel.innerHTML='<option value="">— Tous —</option>';
- const parts=[...new Set(filtered.map(p=>p.partenaire||'').filter(Boolean))].sort();
- parts.forEach(pa=>{paSel.innerHTML+=`<option>${pa}</option>`;});
- xfUpdateSpecialites(n);
-}
+ // Mode spécialité commerciale : le mot-clé correspond à un nom de produit
+ const produitsMatches=prods.filter(p=>(p.nom||'').toLowerCase().includes(mot));
+ if(produitsMatches.length){
+  resDiv.innerHTML=produitsMatches.slice(0,20).map(p=>
+   `<div onclick='xfChoisirProduit(${n},${JSON.stringify(p.id)})' style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #eee;font-size:11px" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='#fff'">
+    <strong>${p.nom}</strong> <span style="color:var(--gr);font-size:9px">${p.substance_active||''}</span>
+   </div>`).join('');
+  resDiv.style.display='block';
+  return;
+ }
 
-function xfUpdateSpecialites(n){
- const prods=xfGetFiltered(n);
- const fam=document.getElementById('xf_fm'+n)?.value||'';
- const mol=document.getElementById('xf_mo'+n)?.value||'';
- const part=document.getElementById('xf_pa2'+n)?.value||'';
- let filtered=prods;
- if(fam) filtered=filtered.filter(p=>(p.famille||'Non classé')===fam);
- if(mol) filtered=filtered.filter(p=>(p.substance_active||'')==mol);
- if(part) filtered=filtered.filter(p=>(p.partenaire||'')==part);
- const prSel=document.getElementById('xf_pr'+n);
- if(!prSel) return;
- prSel.innerHTML='<option value="">— Choisir —</option>';
- filtered.forEach(p=>{
-  const icon=p.categorie==='Phyto'?'🧪':p.categorie==='Fertilisant foliaire'?'🌿':'📦';
-  const opt=p.option_abc?` [${p.option_abc}]`:'';
-  prSel.innerHTML+=`<option value="${p.id}" data-sa="${p.substance_active||''}" data-ty="${p.type_cps||p.type_mfsc||''}" data-do="${p.dose_homologuee||''}" data-nom="${p.nom}" data-fam="${p.famille||''}">${icon} ${p.nom}${opt}</option>`;
+ // Mode substance active : regrouper les produits correspondants par composition exacte
+ const groupes={};
+ prods.forEach(p=>{
+  const subs=_xfSubstances(p);
+  if(!subs.length || !subs.some(s=>s.includes(mot))) return;
+  const cle=[...subs].sort().join(' + ');
+  (groupes[cle]=groupes[cle]||[]).push(p);
  });
- // Si un seul résultat, sélectionner automatiquement
- if(filtered.length===1){prSel.selectedIndex=1;xfFillRow(n);}
+ _xfGroupes[n]=groupes;
+ const cles=Object.keys(groupes).sort((a,b)=>a.split(' + ').length-b.split(' + ').length);
+ if(cles.length){
+  resDiv.innerHTML=cles.map(cle=>
+   `<div onclick='xfChoisirComposition(${n},${JSON.stringify(cle)})' style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #eee;font-size:11px" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='#fff'">
+    <strong>${cle}</strong> <span style="color:var(--gr);font-size:9px">(${groupes[cle].length} spécialité${groupes[cle].length>1?'s':''})</span>
+   </div>`).join('');
+  resDiv.style.display='block';
+  return;
+ }
+ resDiv.innerHTML='<div style="padding:6px 8px;color:var(--gr);font-size:11px">Aucun résultat</div>';
+ resDiv.style.display='block';
 }
 
-function xfFillRow(n){
- const sel=document.getElementById('xf_pr'+n);
- const opt=sel?.options[sel.selectedIndex];
- document.getElementById('xf_sa'+n).value=opt?.dataset?.sa||'';
- document.getElementById('xf_ty'+n).value=opt?.dataset?.ty||'';
- document.getElementById('xf_dh'+n).value=opt?.dataset?.do||'';
- document.getElementById('xf_fam'+n).value=opt?.dataset?.fam||'';
+function xfChoisirProduit(n,prodId){
+ const p=CATALOGUE.find(c=>c.id===prodId);
+ if(!p) return;
+ document.getElementById('xf_search'+n).value=p.nom;
+ document.getElementById('xf_resultats'+n).style.display='none';
+ document.getElementById('xf_substances'+n).value=''; // produit précis : pas de "au choix"
+ const prSel=document.getElementById('xf_pr'+n);
+ prSel.innerHTML=`<option value="${p.id}" data-nom="${p.nom}" selected>${p.nom}</option>`;
+ document.getElementById('xf_sa'+n).value=p.substance_active||'';
+ document.getElementById('xf_ty'+n).value=p.type_cps||p.type_mfsc||'';
+ document.getElementById('xf_dh'+n).value=p.dose_homologuee||'';
+ document.getElementById('xf_fam'+n).value=p.famille||'';
+ document.getElementById('xf_info'+n).innerHTML=`Spécialité retenue : <strong style="color:var(--gd)">${p.nom}</strong>`;
+}
+
+function xfChoisirComposition(n,cle){
+ const groupes=_xfGroupes[n]||{};
+ const liste=groupes[cle]||[];
+ if(!liste.length) return;
+ document.getElementById('xf_search'+n).value=cle;
+ document.getElementById('xf_resultats'+n).style.display='none';
+ const substances=cle.split(' + ');
+ document.getElementById('xf_substances'+n).value=JSON.stringify(substances);
+ const prSel=document.getElementById('xf_pr'+n);
+ prSel.innerHTML=`<option value="" data-nom="${cle} (au choix du client)" selected>${cle} — au choix</option>`;
+ document.getElementById('xf_sa'+n).value=cle;
+ document.getElementById('xf_ty'+n).value=liste[0]?.type_cps||liste[0]?.type_mfsc||'';
+ document.getElementById('xf_dh'+n).value=liste[0]?.dose_homologuee||'';
+ document.getElementById('xf_fam'+n).value=liste[0]?.famille||'';
+ const noms=liste.map(p=>p.nom).join(', ');
+ document.getElementById('xf_info'+n).innerHTML=`<strong style="color:var(--gd)">${liste.length} spécialité(s) possible(s)</strong> — le client choisira laquelle à la validation : ${noms}`;
 }
 
 async function saveXMulti(){
@@ -548,6 +634,7 @@ async function saveXMulti(){
   if(!opt || prSel.selectedIndex===0) continue;
   const dp=document.getElementById('xf_dp'+i)?.value;
   if(!dp){alert('Renseignez la dose prescrite pour le produit '+i);return;}
+  const substancesJson=document.getElementById('xf_substances'+i)?.value||'';
   prods.push({
    cible:document.getElementById('xf_ci'+i)?.value||'',
    id_produit:prSel.value||'',
@@ -555,7 +642,8 @@ async function saveXMulti(){
    substance_active:document.getElementById('xf_sa'+i)?.value||'',
    type_cps:document.getElementById('xf_ty'+i)?.value||'',
    dose_homologuee:document.getElementById('xf_dh'+i)?.value||'',
-   dose_prescrite:dp
+   dose_prescrite:dp,
+   substances_prescrites:substancesJson
   });
  }
  if(prods.length===0){alert('Sélectionnez au moins un produit et renseignez sa dose');return;}
@@ -573,10 +661,15 @@ async function saveXMulti(){
     id_produit:p.id_produit, nom_produit:p.nom_produit,
     substance_active:p.substance_active, type_cps:p.type_cps,
     dose_homologuee:p.dose_homologuee, dose_prescrite:p.dose_prescrite,
+    substances_prescrites:p.substances_prescrites,
     volume_bouillie:vol, observations:obs, date_prevue:datePrevue
    })});
    total++;
   }
+  // Un seul e-mail récapitulatif par client, même si plusieurs produits
+  // viennent d'être prescrits pour lui dans cette même saisie.
+  fetch(`/api/clients/${cid}/notifier-prescription`,{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({passage, produits:prods})}).catch(()=>{});
  }
  closeModal();loadPresc();
  // Générer et stocker les bulletins PDF pour chaque client concerné
@@ -1495,6 +1588,13 @@ function loadOutils(){
   <div style="font-size:16px;font-weight:600;margin-bottom:16px">🔧 Outils administrateur</div>
 
   <div style="border:.5px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:12px">
+   <div style="font-size:13px;font-weight:600;margin-bottom:4px">🔔 Notifications</div>
+   <div style="font-size:12px;color:#666;margin-bottom:10px">Reçois une alerte sur cet appareil dès qu'un client valide un traitement.</div>
+   <button id="btn-notif-admin" onclick="activerNotificationsAdmin()" style="background:#132F21;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Activer les notifications</button>
+   <div id="notif-admin-msg" style="font-size:11px;color:#666;margin-top:6px"></div>
+  </div>
+
+  <div style="border:.5px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:12px">
    <div style="font-size:13px;font-weight:600;margin-bottom:4px">Effacer les rendements réels</div>
    <div style="font-size:12px;color:#666;margin-bottom:10px">
     Remet à zéro les rendements réels, kg cumulés et statuts de récolte pour tous les clients ou un client spécifique.<br>
@@ -1529,6 +1629,7 @@ function loadOutils(){
    sel.appendChild(o);
   });
  }).catch(()=>{});
+ _etatNotificationsAdmin();
 }
 
 async function outilsResetRdtReels(){
