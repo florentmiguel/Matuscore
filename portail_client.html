@@ -1197,6 +1197,15 @@ async function _chargerCatalogueClient(){
 function _parseSubstances(p){
  try{ return JSON.parse(p.substances_parsees||'[]'); }catch(e){ return []; }
 }
+function _normaliser(s){
+ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+// Clés scientifiques normalisées d'un produit (ex. "sulphur", pas le nom
+// usuel qui peut varier d'un produit à l'autre pour la même substance —
+// voir le commentaire équivalent côté admin, dashboard_v2.html).
+function _clesSubstances(p){
+ return _parseSubstances(p).map(s=>_normaliser(s.cle)).sort();
+}
 
 // Produits dont la composition correspond EXACTEMENT (mêmes substances,
 // ni plus ni moins) à l'ensemble prescrit.
@@ -1205,11 +1214,14 @@ function _parseSubstances(p){
 // différente n'est pas le même produit — ex. deux soufres à 700g/L mais
 // dosés différemment). doseHomologuee est optionnel pour compatibilité
 // avec d'anciennes prescriptions qui n'auraient pas encore cette info.
+// substancesPrescrites contient déjà les clés normalisées (enregistrées
+// ainsi par Pilot admin), mais on normalise quand même ici par sécurité
+// pour les prescriptions plus anciennes qui auraient stocké le nom usuel.
 function _produitsCorrespondantExactement(produits, substancesPrescrites, doseHomologuee){
- const voulu = [...substancesPrescrites].map(s=>s.toLowerCase()).sort().join('|');
+ const voulu = [...substancesPrescrites].map(s=>_normaliser(s)).sort().join('|');
  const doseVoulue = (doseHomologuee||'').trim();
  return produits.filter(p=>{
-  const presentes = _parseSubstances(p).map(s=>s.toLowerCase()).sort().join('|');
+  const presentes = _clesSubstances(p).join('|');
   if(presentes !== voulu) return false;
   if(doseVoulue && (p.dose_homologuee||'').trim() !== doseVoulue) return false;
   return true;

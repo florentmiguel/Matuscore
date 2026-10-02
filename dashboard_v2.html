@@ -569,26 +569,54 @@ function xfMajCibles(n, produits, doseGroupe){
 
 let _xfGroupes={}; // cache des regroupements par composition, par ligne (n)
 
+// Insensible à la casse ET aux accents (ex. chercher "benalaxyl" doit
+// trouver "bénalaxyl").
+function _xfNormaliser(s){
+ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+// Chaque substance est {nom, cle} : 'nom' est le nom usuel tel qu'affiché
+// (peut varier d'un produit à l'autre pour la même substance, ex. "soufre"
+// vs "Sulphur" selon des incohérences de la base source), 'cle' est le nom
+// scientifique entre parenthèses, fiable et constant — c'est LUI qui sert
+// de base au regroupement, jamais le nom usuel.
 function _xfSubstances(p){
  try{ return JSON.parse(p.substances_parsees||'[]'); }catch(e){ return []; }
 }
+function _xfSubstanceMatch(p, motNormalise){
+ return _xfSubstances(p).some(s=>
+  _xfNormaliser(s.nom).includes(motNormalise) || _xfNormaliser(s.cle).includes(motNormalise)
+ );
+}
+
+// Déduit la formulation (liquide/solide) depuis l'unité de la dose —
+// aucune donnée dédiée à la formulation n'existe dans la base source,
+// mais l'unité (L/ha vs kg/ha) la révèle de façon fiable.
+function _xfFormulation(unite){
+ const u=(unite||'').toLowerCase();
+ if(u.startsWith('l/')||u.startsWith('ml/')||u.includes('l/hl')) return '💧 Liquide';
+ if(u.startsWith('kg/')||u.startsWith('g/')) return '🧂 Solide';
+ return '';
+}
 
 // Deux produits ne sont de vrais équivalents (interchangeables à la
-// validation) que s'ils ont EXACTEMENT les mêmes substances ET la même
-// dose homologuée — même composition à des concentrations différentes
-// n'est pas la même chose. Un même produit peut avoir PLUSIEURS usages
-// vigne à des doses différentes (ex. 7.5 pour une cible, 12.5 pour une
-// autre) : il appartient alors à PLUSIEURS groupes, un par dose réelle —
-// se limiter à une dose unique par produit sous-estimait fortement le
-// nombre de spécialités réellement équivalentes.
+// validation) que s'ils ont EXACTEMENT les mêmes substances (par clé
+// scientifique, pas nom usuel) ET la même dose homologuée — même
+// composition à des concentrations différentes n'est pas la même chose.
+// Un même produit peut avoir PLUSIEURS usages vigne à des doses
+// différentes (ex. 7.5 pour une cible, 12.5 pour une autre) : il
+// appartient alors à PLUSIEURS groupes, un par dose réelle.
 function _xfUsagesVigne(p){
  try{
   const usages=JSON.parse(p.usages_json||'[]');
   return usages.filter(u=>(u.c||'').toLowerCase().startsWith('vigne'));
  }catch(e){ return []; }
 }
+function _xfClesSubstances(p){
+ return [..._xfSubstances(p)].map(s=>_xfNormaliser(s.cle)).sort();
+}
 function _xfClesGroupePourProduit(p){
- const subs=[..._xfSubstances(p)].sort().join('+');
+ const subs=_xfClesSubstances(p).join('+');
  const usagesVigne=_xfUsagesVigne(p);
  if(!usagesVigne.length) return [subs+'__dose:'+(p.dose_homologuee||'').trim()];
  const doses=new Set(usagesVigne.map(u=>(u.d||'').trim()));
@@ -612,18 +640,21 @@ function _xfUniteDeDose(produits, dose){
 }
 
 function xfRechercheUnifiee(n){
- const mot=(document.getElementById('xf_search'+n).value||'').trim().toLowerCase();
+ const motBrut=(document.getElementById('xf_search'+n).value||'').trim();
  const resDiv=document.getElementById('xf_resultats'+n);
- if(!mot){ resDiv.style.display='none'; resDiv.innerHTML=''; return; }
+ if(!motBrut){ resDiv.style.display='none'; resDiv.innerHTML=''; return; }
+ const mot=_xfNormaliser(motBrut); // insensible à la casse ET aux accents
  const prods=xfGetFiltered(n);
 
  // Dans les deux cas (recherche par nom de produit OU par substance), le
  // résultat final est un GROUPE de spécialités équivalentes (même
- // composition, même dose homologuée) — jamais un produit isolé, pour que
- // le client ait bien le choix parmi tout ce qui est réellement
- // interchangeable (ex. MAXISOUFRE, HELIOSOUFRE S, BIOSOUFRE...).
+ // composition — par clé scientifique, pas nom usuel — même dose
+ // homologuée) — jamais un produit isolé, pour que le client ait bien le
+ // choix parmi tout ce qui est réellement interchangeable (ex. MAXISOUFRE,
+ // HELIOSOUFRE S, BIOSOUFRE... et les produits "Sulphur" qui sont la même
+ // substance malgré un nom usuel différent dans la base source).
  const groupes={};
- const parNom=prods.filter(p=>(p.nom||'').toLowerCase().includes(mot));
+ const parNom=prods.filter(p=>_xfNormaliser(p.nom).includes(mot));
  if(parNom.length){
   // Étendre chaque produit trouvé par son nom à TOUS ses groupes
   // d'équivalents (un par dose vigne distincte qu'il possède)
@@ -636,8 +667,7 @@ function xfRechercheUnifiee(n){
   });
  } else {
   prods.forEach(p=>{
-   const subs=_xfSubstances(p);
-   if(!subs.length || !subs.some(s=>s.includes(mot))) return;
+   if(!_xfSubstances(p).length || !_xfSubstanceMatch(p, mot)) return;
    _xfClesGroupePourProduit(p).forEach(cle=>{
     (groupes[cle]=groupes[cle]||[]).push(p);
    });
@@ -654,9 +684,11 @@ function xfRechercheUnifiee(n){
  if(cles.length){
   resDiv.innerHTML=cles.map(cle=>{
    const liste=groupes[cle];
-   const dose=liste[0]?.dose_homologuee;
+   const dose=_xfDoseDeCle(cle);
+   const unite=_xfUniteDeDose(liste,dose)||liste[0]?.unite||'';
+   const formulation=_xfFormulation(unite);
    return `<div onclick='xfChoisirGroupe(${n},${JSON.stringify(cle)})' style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #eee;font-size:11px" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='#fff'">
-    <strong>${_xfLabelGroupe(cle)}</strong>${dose?` — dose hom. ${dose}`:''} <span style="color:var(--gr);font-size:9px">(${liste.length} spécialité${liste.length>1?'s':''})</span>
+    <strong>${_xfLabelGroupe(cle)}</strong>${dose?` — dose hom. ${dose}${unite?' '+unite:''}`:''}${formulation?` <span style="font-size:9px">${formulation}</span>`:''} <span style="color:var(--gr);font-size:9px">(${liste.length} spécialité${liste.length>1?'s':''})</span>
    </div>`;
   }).join('');
   resDiv.style.display='block';
@@ -686,7 +718,12 @@ function xfChoisirGroupe(n,cle){
   document.getElementById('xf_info'+n).innerHTML=`Spécialité retenue : <strong style="color:var(--gd)">${p.nom}</strong>`;
  } else {
   document.getElementById('xf_search'+n).value=label;
-  document.getElementById('xf_substances'+n).value=JSON.stringify(label.split(' + '));
+  // On enregistre les CLÉS scientifiques normalisées (celles qui ont servi
+  // au regroupement), pas le libellé affiché — pour que la validation
+  // côté client retrouve exactement le même ensemble de produits,
+  // peu importe lequel des noms usuels variables (ex. "soufre" vs
+  // "Sulphur") est affiché ici.
+  document.getElementById('xf_substances'+n).value=JSON.stringify(cle.split('__dose:')[0].split('+'));
   prSel.innerHTML=`<option value="" data-nom="${label} (au choix du client)" selected>${label} — au choix</option>`;
   const noms=liste.map(p=>p.nom).join(', ');
   document.getElementById('xf_info'+n).innerHTML=`<strong style="color:var(--gd)">${liste.length} spécialité(s) possible(s)</strong> — le client choisira laquelle à la validation : ${noms}`;
