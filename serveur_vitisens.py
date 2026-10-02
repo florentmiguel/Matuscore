@@ -771,6 +771,13 @@ def init_db():
         "ALTER TABLE catalogue ADD COLUMN envf TEXT",
         "ALTER TABLE catalogue ADD COLUMN source_ephy INTEGER DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_catalogue_amm ON catalogue(amm)",
+        # Unité réelle de la dose d'homologation (L/ha, kg/ha, kg/hL...),
+        # distincte de unite_concentration (qui décrit la concentration de
+        # matière active DANS la formulation, pas l'unité d'application —
+        # colonne pré-existante, destinée aux fiches MFSC saisies à la main,
+        # qui a un DEFAULT 'g/kg' involontairement hérité par tous les
+        # produits e-phy importés faute d'avoir renseigné ce champ-ci).
+        "ALTER TABLE catalogue ADD COLUMN unite TEXT",
         # Prescription par substance(s) active(s) : l'ensemble des substances
         # prescrites (ex. ["cymoxanil","folpel"]) plutôt qu'un seul produit
         # figé — la spécialité commerciale exacte n'est choisie qu'à la

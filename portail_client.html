@@ -1200,11 +1200,19 @@ function _parseSubstances(p){
 
 // Produits dont la composition correspond EXACTEMENT (mêmes substances,
 // ni plus ni moins) à l'ensemble prescrit.
-function _produitsCorrespondantExactement(produits, substancesPrescrites){
+// Deux produits ne sont réellement interchangeables que s'ils ont la même
+// composition ET la même dose homologuée (même composition à une dose
+// différente n'est pas le même produit — ex. deux soufres à 700g/L mais
+// dosés différemment). doseHomologuee est optionnel pour compatibilité
+// avec d'anciennes prescriptions qui n'auraient pas encore cette info.
+function _produitsCorrespondantExactement(produits, substancesPrescrites, doseHomologuee){
  const voulu = [...substancesPrescrites].map(s=>s.toLowerCase()).sort().join('|');
+ const doseVoulue = (doseHomologuee||'').trim();
  return produits.filter(p=>{
   const presentes = _parseSubstances(p).map(s=>s.toLowerCase()).sort().join('|');
-  return presentes === voulu;
+  if(presentes !== voulu) return false;
+  if(doseVoulue && (p.dose_homologuee||'').trim() !== doseVoulue) return false;
+  return true;
  });
 }
 
@@ -1217,7 +1225,7 @@ async function showChangeProduit(prescId, cible, produitActuel){
  let substancesPrescrites = [];
  try{ substancesPrescrites = presc?.substances_prescrites ? JSON.parse(presc.substances_prescrites) : []; }catch(e){}
  const prods = substancesPrescrites.length
-  ? _produitsCorrespondantExactement(data.produits||[], substancesPrescrites)
+  ? _produitsCorrespondantExactement(data.produits||[], substancesPrescrites, presc?.dose_homologuee)
   : (data.produits||[]).filter(p => cible ? (p.cible||'').toLowerCase().includes(cible.toLowerCase()) : true);
  const certif = data.certification;
 
@@ -1289,7 +1297,7 @@ async function validerPassage(ids){
   let substances = [];
   try{ substances = presc?.substances_prescrites ? JSON.parse(presc.substances_prescrites) : []; }catch(e){}
   if(!substances.length) continue;
-  const matches = _produitsCorrespondantExactement(data.produits||[], substances);
+  const matches = _produitsCorrespondantExactement(data.produits||[], substances, presc?.dose_homologuee);
   if(matches.length > 1) ambigues.push({id, substances, matches, nomActuel: presc.nom});
  }
  if(ambigues.length){
