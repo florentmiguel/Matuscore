@@ -451,7 +451,7 @@ function xfAddProdRow(n){
   ${n>1?'<button class="btn btn-sm btn-del" onclick="xfRemoveRow('+n+')">✕</button>':''}
  </div>
  <div class="fg fg3">
-  <div><label>Cible</label><select id="xf_ci${n}" onchange="xfUpdateFamilles(${n})"><option>Mildiou</option><option>Oïdium</option><option>Botrytis</option><option>Tordeuses</option><option>Flavescence dorée</option><option>Nutrition</option><option>Correction carence</option><option>Anti-stress</option><option>Floraison-nouaison</option><option>Fertilisant foliaire</option><option>Biostimulant</option></select></div>
+  <div><label>Cible exacte de ce traitement</label><select id="xf_ci${n}" disabled><option value="">— Choisissez d'abord ci-contre —</option></select></div>
   <div style="grid-column:span 2;position:relative">
    <label>Recherche — spécialité commerciale OU substance active</label>
    <input id="xf_search${n}" placeholder="ex: folpel, ou AMAROK..." oninput="xfRechercheUnifiee(${n})" autocomplete="off">
@@ -516,28 +516,36 @@ function xfGetCert(){
 }
 
 // Filtre le catalogue selon cible + certification
+// La cible n'est plus un pré-filtre de recherche : on cherche d'abord un
+// produit ou une substance, et c'est CE choix qui détermine ensuite les
+// cibles réellement possibles (voir xfMajCibles). Seule la certification
+// (Bio/HVE) reste un filtre appliqué en amont.
 function xfGetFiltered(n){
  const cert=xfGetCert();
- const cibleSel=document.getElementById('xf_ci'+n);
- if(!cibleSel) return [];
- const cible=cibleSel.value.toLowerCase();
  return CATALOGUE.filter(p=>{
   if(cert==='Bio' && !p.compatible_bio) return false;
   if(cert==='HVE' && !p.compatible_hve) return false;
-  const pc=(p.cible||'').toLowerCase();
-  const po=(p.objectif||'').toLowerCase();
-  const pcat=(p.categorie||'').toLowerCase();
-  if(cible==='mildiou') return pc.includes('mildiou');
-  if(cible==='oïdium') return pc.includes('dium');
-  if(cible==='botrytis') return pc.includes('botrytis');
-  if(cible==='tordeuses') return pc.includes('tordeuse');
-  if(cible==='flavescence dorée') return pc.includes('cicadelle')||pc.includes('flavescence');
-  if(cible==='nutrition'||cible==='correction carence'||cible==='anti-stress'||cible==='floraison-nouaison')
-   return po.includes(cible)||pc.includes(cible);
-  if(cible==='fertilisant foliaire') return pcat.includes('fertilisant');
-  if(cible==='biostimulant') return pcat.includes('biostimulant');
   return true;
  });
+}
+
+// Remplit le menu Cible avec l'union des cibles réellement associées aux
+// produits retenus (un produit polyvalent comme un fongicide anti-Excoriose
+// ET anti-Mildiou liste les deux ; Florent choisit laquelle correspond à
+// CE traitement précis — c'est cette valeur, pas la liste complète, qui
+// sera enregistrée dans la prescription puis remontée en traçabilité).
+function xfMajCibles(n, produits){
+ const sel=document.getElementById('xf_ci'+n);
+ if(!sel) return;
+ const cibles=new Set();
+ produits.forEach(p=>(p.cible||'').split('|').map(c=>c.trim()).filter(Boolean).forEach(c=>cibles.add(c)));
+ if(!cibles.size){
+  sel.innerHTML='<option value="">— Aucune cible renseignée, à préciser —</option>';
+  sel.disabled=false;
+  return;
+ }
+ sel.innerHTML=[...cibles].sort().map(c=>`<option>${c}</option>`).join('');
+ sel.disabled=false; // toujours modifiable, même quand une seule cible est proposée
 }
 
 let _xfGroupes={}; // cache des regroupements par composition, par ligne (n)
@@ -598,6 +606,7 @@ function xfChoisirProduit(n,prodId){
  document.getElementById('xf_dh'+n).value=p.dose_homologuee||'';
  document.getElementById('xf_fam'+n).value=p.famille||'';
  document.getElementById('xf_info'+n).innerHTML=`Spécialité retenue : <strong style="color:var(--gd)">${p.nom}</strong>`;
+ xfMajCibles(n,[p]);
 }
 
 function xfChoisirComposition(n,cle){
@@ -616,6 +625,7 @@ function xfChoisirComposition(n,cle){
  document.getElementById('xf_fam'+n).value=liste[0]?.famille||'';
  const noms=liste.map(p=>p.nom).join(', ');
  document.getElementById('xf_info'+n).innerHTML=`<strong style="color:var(--gd)">${liste.length} spécialité(s) possible(s)</strong> — le client choisira laquelle à la validation : ${noms}`;
+ xfMajCibles(n,liste);
 }
 
 async function saveXMulti(){
