@@ -1348,37 +1348,57 @@ function _confirmerIlots(ids){
  _afficherCalendrierValidation(ids);
 }
 
+// État conservé dans des variables de module plutôt que ré-injecté en JSON
+// dans des attributs onclick — un nom de produit contenant un guillemet ou
+// une apostrophe (ex. "L'AVY") suffisait à casser silencieusement le clic.
+let _resolutionIds=[], _resolutionAmbigues=[], _resolutionIndex=0, _resolutionChoixId=null;
+
 function _resoudreSpecialites(ids, ambigues, index){
  if(index >= ambigues.length){
   _afficherCalendrierValidation(ids);
   return;
  }
+ _resolutionIds=ids; _resolutionAmbigues=ambigues; _resolutionIndex=index; _resolutionChoixId=null;
  const courant = ambigues[index];
- const optionsHtml = courant.matches.map(p=>
-  `<label style="display:flex;align-items:center;gap:8px;padding:8px;border:1.5px solid #e5e7eb;border-radius:6px;margin-bottom:6px;cursor:pointer">
-    <input type="radio" name="choixSpecialite" value="${p.id}" style="flex-shrink:0">
-    <span>${p.nom}</span>
-   </label>`).join('');
+ _rendreChoixSpecialite(courant);
+ document.getElementById('modal').style.display='block';
+}
+
+function _rendreChoixSpecialite(courant){
+ const optionsHtml = courant.matches.map((p,i)=>
+  `<div onclick="_selectionnerSpecialite(${i})" id="choixSpec${i}" style="padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:6px;margin-bottom:6px;cursor:pointer;font-size:13px" onmouseover="if(_resolutionChoixId!==${i})this.style.background='#f3f4f6'" onmouseout="if(_resolutionChoixId!==${i})this.style.background='#fff'">${p.nom}</div>`
+ ).join('');
  document.getElementById('modalContent').innerHTML=`
   <h3 style="color:var(--gd);margin-bottom:4px">🧪 Choisissez votre spécialité</h3>
   <p style="font-size:12px;color:var(--gr);margin-bottom:10px">Votre conseiller a prescrit <strong>${courant.substances.join(' + ')}</strong> — plusieurs spécialités correspondent exactement. Indiquez celle que vous utilisez réellement.</p>
   <div id="choixSpecialiteList">${optionsHtml}</div>
-  <button class="btn btn-success" style="margin-top:8px" onclick="_confirmerSpecialite(${JSON.stringify(ids)},${JSON.stringify(ambigues)},${index})">Continuer</button>
+  <button class="btn btn-success" style="margin-top:8px" onclick="_confirmerSpecialite()">Continuer</button>
  `;
- document.getElementById('modal').style.display='block';
 }
 
-async function _confirmerSpecialite(ids, ambigues, index){
- const choix = document.querySelector('input[name="choixSpecialite"]:checked');
- if(!choix){ alert('Sélectionnez une spécialité pour continuer'); return; }
- const courant = ambigues[index];
+function _selectionnerSpecialite(i){
+ _resolutionChoixId=i;
+ const courant=_resolutionAmbigues[_resolutionIndex];
+ courant.matches.forEach((p,j)=>{
+  const el=document.getElementById('choixSpec'+j);
+  if(!el) return;
+  el.style.background = j===i ? 'var(--gbg)' : '#fff';
+  el.style.borderColor = j===i ? 'var(--gd)' : '#e5e7eb';
+  el.style.fontWeight = j===i ? '700' : '400';
+ });
+}
+
+async function _confirmerSpecialite(){
+ if(_resolutionChoixId===null){ alert('Sélectionnez une spécialité pour continuer'); return; }
+ const courant = _resolutionAmbigues[_resolutionIndex];
+ const produitChoisi = courant.matches[_resolutionChoixId];
  try{
   await fetch(`${API_BASE}/modifier-prescription`,{
    method:'POST', headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({prescription_id:courant.id, id_produit:choix.value, dose_prescrite:''})
+   body:JSON.stringify({prescription_id:courant.id, id_produit:produitChoisi.id, dose_prescrite:''})
   });
  }catch(e){ alert('Erreur lors de l\'enregistrement du choix'); return; }
- _resoudreSpecialites(ids, ambigues, index+1);
+ _resoudreSpecialites(_resolutionIds, _resolutionAmbigues, _resolutionIndex+1);
 }
 
 function _afficherCalendrierValidation(ids){
