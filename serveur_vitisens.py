@@ -1509,6 +1509,24 @@ def _dose_numerique(s):
     m = re.match(r"^[\d.,]+", (s or "").strip())
     return m.group(0).replace(",", ".") if m else ""
 
+def _usages_vigne_catalogue(c):
+    try:
+        usages = json.loads(c.get("usages_json") or "[]")
+    except Exception:
+        return []
+    return [u for u in usages if (u.get("c") or "").lower().startswith("vigne")]
+
+def _dar_znt_pour_cible(c, cible):
+    """DAR/ZNT propres à LA cible de la prescription — comme pour la dose,
+    la colonne simplifiée du catalogue peut appartenir à un tout autre
+    usage du même produit (ex. DAR d'Acariens au lieu d'Oïdium)."""
+    usages = _usages_vigne_catalogue(c)
+    pertinents = [u for u in usages if (u.get("c") or "").strip() == cible] if cible else usages
+    if pertinents:
+        u = pertinents[0]
+        return (u.get("dar") or "", u.get("znt") or "")
+    return (c.get("dar") or "", c.get("znt") or "")
+
 def _resoudre_noms_prescriptions(prescriptions, conn):
     """Pour les prescriptions par substance (substances_prescrites rempli),
     remplace le libellé générique ('au choix du client') par la liste des
@@ -1517,14 +1535,35 @@ def _resoudre_noms_prescriptions(prescriptions, conn):
     dose), pour que le bulletin affiche une information utilisable.
     Si Florent a choisi une sélection à communiquer (specialites_communiquees,
     cas des substances très courantes avec plus de 5 équivalents), c'est
-    CETTE sélection qui est utilisée telle quelle, en priorité."""
+    CETTE sélection qui est utilisée telle quelle, en priorité.
+    Attache aussi dar/dre/znt (issus du catalogue, sensibles à la cible)
+    pour l'affichage dans le bulletin."""
     catalogue = None
     for p in prescriptions:
+        p["dar"] = p["dre"] = p["znt"] = ""
+        if catalogue is None:
+            catalogue = dicts_from_rows(conn.execute(
+                "SELECT id, nom, substances_parsees, dose_homologuee, usages_json, dre FROM catalogue"
+            ).fetchall())
+
+        # Produit précis déjà choisi (id_produit renseigné) : DAR/DRE/ZNT
+        # directement depuis ce produit, sans recherche de correspondance.
+        if p.get("id_produit"):
+            c = next((x for x in catalogue if x["id"] == p["id_produit"]), None)
+            if c:
+                dar, znt = _dar_znt_pour_cible(c, p.get("cible"))
+                p["dar"], p["dre"], p["znt"] = dar, c.get("dre") or "", znt
+
         if p.get("specialites_communiquees"):
             try:
                 noms_choisis = json.loads(p["specialites_communiquees"])
                 if noms_choisis:
                     p["nom"] = ", ".join(noms_choisis)
+                    if not p.get("dar"):
+                        c = next((x for x in catalogue if x["nom"] == noms_choisis[0]), None)
+                        if c:
+                            dar, znt = _dar_znt_pour_cible(c, p.get("cible"))
+                            p["dar"], p["dre"], p["znt"] = dar, c.get("dre") or "", znt
                     continue
             except Exception:
                 pass
@@ -1536,13 +1575,9 @@ def _resoudre_noms_prescriptions(prescriptions, conn):
             continue
         if not substances:
             continue
-        if catalogue is None:
-            catalogue = dicts_from_rows(conn.execute(
-                "SELECT nom, substances_parsees, dose_homologuee FROM catalogue"
-            ).fetchall())
         voulu = "|".join(sorted(_normaliser_fr(s) for s in substances))
         dose_voulue = _dose_numerique(p.get("dose_homologuee"))
-        noms = []
+        matches = []
         for c in catalogue:
             try:
                 subs_c = json.loads(c.get("substances_parsees") or "[]")
@@ -1553,8 +1588,9 @@ def _resoudre_noms_prescriptions(prescriptions, conn):
                 continue
             if dose_voulue and _dose_numerique(c.get("dose_homologuee")) != dose_voulue:
                 continue
-            noms.append(c["nom"])
-        if noms:
+            matches.append(c)
+        if matches:
+            noms = [c["nom"] for c in matches]
             # Avec une substance très courante (ex. soufre), le nombre de
             # spécialités équivalentes peut dépasser 50 — une liste
             # complète serait illisible dans le tableau du bulletin.
@@ -1563,6 +1599,9 @@ def _resoudre_noms_prescriptions(prescriptions, conn):
                 p["nom"] = ", ".join(noms)
             else:
                 p["nom"] = ", ".join(noms[:LIMITE]) + f" (+{len(noms) - LIMITE} autres)"
+            if not p.get("dar"):
+                dar, znt = _dar_znt_pour_cible(matches[0], p.get("cible"))
+                p["dar"], p["dre"], p["znt"] = dar, matches[0].get("dre") or "", znt
     return prescriptions
 
 def docx_to_pdf(docx_buf):

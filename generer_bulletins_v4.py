@@ -367,38 +367,69 @@ def build_bulletin(client, av, prescriptions, suivi, meteo_days):
         styled_para(doc, "Météo non disponible — consultez le Dashboard VITI Sens.", bold=True, color=GR)
 
     # ===== 5. PROGRAMME PHYTO =====
-    section_heading(doc, "5", "PROGRAMME PHYTOSANITAIRE", RD)
+    # Le bulletin reflète l'état ACTUEL du conseil, pas l'historique complet :
+    # une seule ligne par cible, la plus récente (passage le plus avancé).
+    def _derniere(liste):
+        if not liste: return []
+        def _num(p):
+            pa = (p.get("passage") or "")
+            return int(pa[1:]) if pa[:1] == "T" and pa[1:].isdigit() else (p.get("id") or 0)
+        return [max(liste, key=_num)]
+    presc_mildiou = _derniere(presc_mildiou)
+    presc_oidium = _derniere(presc_oidium)
+    presc_botrytis = _derniere(presc_botrytis)
+    presc_autres = _derniere(presc_autres)
+
+    section_heading(doc, "5", "PROGRAMME PHYTOSANITAIRE", GD)
+    derniers_passages = " · ".join(
+        f"{lbl} {p['passage']}" for lbl, liste in
+        [("Mildiou", presc_mildiou), ("Oïdium", presc_oidium), ("Botrytis", presc_botrytis), ("Autres", presc_autres)]
+        for p in liste if p.get("passage")
+    )
+    if derniers_passages:
+        styled_para(doc, f"Derniers passages : {derniers_passages}", bold=True, size=9, color=GM)
     styled_para(doc, f"Certification : {certif} — Cu cumulé : {client['cu_cumule'] or 0} g/ha — Folpel cumulé : {cumul_folpel:.1f} kg/ha ({nb_folpel} traitements)",
-        bold=True, size=9, color=GR)
+        size=9, color=GR)
 
     if not prescriptions:
         alert_box(doc, "⚠️ Aucune prescription saisie",
             "Ouvrez la base Excel → onglet Prescriptions → ajoutez les produits et doses pour ce client.",
             YBG, OR)
     else:
+        # Palette VITI Sens : vert foncé (Mildiou), vert moyen (Oïdium),
+        # vert clair/brun sombre pour les autres cibles — on reste dans la
+        # famille de couleurs de la marque plutôt que des teintes génériques.
         for cible_label, presc_list, bg_hdr in [
-            ("MILDIOU", presc_mildiou, OR), ("OÏDIUM", presc_oidium, GM),
-            ("BOTRYTIS", presc_botrytis, GR), ("AUTRES", presc_autres, "555555")]:
+            ("MILDIOU", presc_mildiou, GD), ("OÏDIUM", presc_oidium, GM),
+            ("BOTRYTIS", presc_botrytis, "6B4226"), ("AUTRES", presc_autres, GR)]:
             if not presc_list: continue
             styled_para(doc, cible_label, bold=True, size=12, color=bg_hdr, sb=10)
-            t = doc.add_table(rows=1+len(presc_list), cols=7)
-            header_row(t, 0, ["Passage","Produit","Type","Dose homologuée","DOSE PRESCRITE","Vol. bouillie","Observations"], bg=bg_hdr)
+            cols = ["Produit","Type","Dose homol.","DOSE PRESCRITE","DAR","DRE","ZNT","Vol.","Observations"]
+            t = doc.add_table(rows=1+len(presc_list), cols=len(cols))
+            t.autofit = False
+            largeurs = [Cm(5.3), Cm(1.8), Cm(1.9), Cm(1.9), Cm(1.1), Cm(1.3), Cm(1.1), Cm(1.4), Cm(2.3)]
+            for col_idx, larg in enumerate(largeurs):
+                for row in t.rows:
+                    row.cells[col_idx].width = larg
+            header_row(t, 0, cols, bg=bg_hdr)
             for i, p in enumerate(presc_list):
                 ri = i+1
                 dp = p["dose_prescrite"] or "[à renseigner]"
                 dh = p["dose_homologuee"] or "—"
                 custom = dp and dp != dh and "[" not in str(dp)
-                body_cell(t.cell(ri,0), p["passage"] or "—", bold=True, size=9)
-                body_cell(t.cell(ri,1), p["nom"] or "—", bold=True, size=9)
-                body_cell(t.cell(ri,2), p["type_cps"] or "—", size=8)
-                body_cell(t.cell(ri,3), dh, size=8, color=GR)
-                body_cell(t.cell(ri,4), dp, bold=True, size=9, color=RD if custom else BK)
-                shade(t.cell(ri,4), YBG)
-                body_cell(t.cell(ri,5), f"{p['volume_bouillie']} L/ha" if p['volume_bouillie'] else "—", size=8)
-                body_cell(t.cell(ri,6), p["observations"] or "", size=8, color=GR)
+                body_cell(t.cell(ri,0), p["nom"] or "—", bold=True, size=9)
+                body_cell(t.cell(ri,1), p["type_cps"] or "—", size=8)
+                body_cell(t.cell(ri,2), dh, size=8, color=GR)
+                body_cell(t.cell(ri,3), dp, bold=True, size=9, color=RD if custom else BK)
+                shade(t.cell(ri,3), YBG)
+                body_cell(t.cell(ri,4), p.get("dar") or "—", size=8)
+                body_cell(t.cell(ri,5), p.get("dre") or "—", size=8)
+                body_cell(t.cell(ri,6), p.get("znt") or "—", size=8)
+                body_cell(t.cell(ri,7), f"{p['volume_bouillie']} L/ha" if p['volume_bouillie'] else "—", size=8)
+                body_cell(t.cell(ri,8), p["observations"] or "", size=8, color=GR)
                 if p.get("applique") == "Oui":
                     shade(t.cell(ri,0), GBG)
-                    body_cell(t.cell(ri,0), f"{p['passage']} ✅", bold=True, size=9)
+                    body_cell(t.cell(ri,0), f"{p['nom']} ✅", bold=True, size=9)
 
         # Bio copper tracking
         if certif == "Bio":
