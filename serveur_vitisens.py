@@ -1559,14 +1559,22 @@ def docx_to_pdf(docx_buf):
             "soffice", "libreoffice",
         ]:
             try:
-                subprocess.run([lo_path, "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, docx_path],
+                r = subprocess.run([lo_path, "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, docx_path],
                     capture_output=True, timeout=30)
                 if os.path.exists(pdf_path):
-                    print(f"   ✅ PDF converti via LibreOffice")
+                    print(f"   ✅ PDF converti via LibreOffice ({lo_path})")
                     with open(pdf_path, 'rb') as f:
                         return io.BytesIO(f.read())
-            except FileNotFoundError: continue
-            except: continue
+                else:
+                    print(f"   ⚠️ LibreOffice ({lo_path}) exécuté (code {r.returncode}) mais pas de PDF produit.")
+                    print(f"      stdout: {r.stdout.decode(errors='replace')[:500]}")
+                    print(f"      stderr: {r.stderr.decode(errors='replace')[:500]}")
+            except FileNotFoundError:
+                print(f"   ⚠️ {lo_path} introuvable sur ce système.")
+                continue
+            except Exception as e:
+                print(f"   ⚠️ {lo_path} erreur : {e}")
+                continue
         
         print("   ❌ Aucun convertisseur PDF disponible.")
         return None

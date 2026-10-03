@@ -1216,13 +1216,22 @@ function _clesSubstances(p){
 // substancesPrescrites contient déjà les clés normalisées (enregistrées
 // ainsi par Pilot admin), mais on normalise quand même ici par sécurité
 // pour les prescriptions plus anciennes qui auraient stocké le nom usuel.
+// La dose enregistrée sur la prescription peut contenir l'unité accolée
+// (ex. "0.5 kg/ha", pour l'affichage côté admin), alors que le catalogue
+// ne stocke que le chiffre seul ("0.5", unité dans un champ séparé) — on
+// extrait donc juste la partie numérique de tête avant de comparer, pour
+// que les deux formats se correspondent correctement.
+function _doseNumerique(s){
+ const m=(s||'').toString().trim().match(/^[\d.,]+/);
+ return m ? m[0].replace(',','.') : '';
+}
 function _produitsCorrespondantExactement(produits, substancesPrescrites, doseHomologuee){
  const voulu = [...substancesPrescrites].map(s=>_normaliser(s)).sort().join('|');
- const doseVoulue = (doseHomologuee||'').trim();
+ const doseVoulue = _doseNumerique(doseHomologuee);
  return produits.filter(p=>{
   const presentes = _clesSubstances(p).join('|');
   if(presentes !== voulu) return false;
-  if(doseVoulue && (p.dose_homologuee||'').trim() !== doseVoulue) return false;
+  if(doseVoulue && _doseNumerique(p.dose_homologuee) !== doseVoulue) return false;
   return true;
  });
 }
