@@ -787,6 +787,11 @@ def init_db():
         # Campagne (année) — permet de repartir de zéro chaque saison dans
         # le dashboard, comme déjà fait pour rendements/bulletins/etc.
         "ALTER TABLE prescriptions ADD COLUMN campagne TEXT",
+        # Au-delà de 5 spécialités équivalentes (ex. soufre), Florent choisit
+        # lesquelles communiquer (Traitements/Bulletin) — la validation du
+        # client continue cependant de s'appuyer sur substances_prescrites
+        # pour retrouver la liste COMPLÈTE, jamais la sélection réduite.
+        "ALTER TABLE prescriptions ADD COLUMN specialites_communiquees TEXT",
     ]:
         try: conn.execute(alter)
         except: pass
@@ -1314,13 +1319,14 @@ def create_prescription():
     cur = conn.execute("""INSERT INTO prescriptions
         (id_client,cible,passage,id_produit,nom_produit,substance_active,type_cps,
         dose_homologuee,dose_prescrite,volume_bouillie,date_prevue,observations,applique,
-        substances_prescrites,campagne)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        substances_prescrites,campagne,specialites_communiquees)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (d.get('id_client'), d.get('cible'), d.get('passage'), d.get('id_produit'),
          d.get('nom_produit'), d.get('substance_active'), d.get('type_cps'),
          d.get('dose_homologuee'), d.get('dose_prescrite'), d.get('volume_bouillie'),
          d.get('date_prevue'), d.get('observations'), d.get('applique','Non'),
-         d.get('substances_prescrites'), str(datetime.now().year)))
+         d.get('substances_prescrites'), str(datetime.now().year),
+         d.get('specialites_communiquees')))
     nouvel_id = cur.lastrowid
     conn.commit(); conn.close()
     return jsonify({"status": "ok", "id": nouvel_id})
@@ -1492,6 +1498,73 @@ def get_epidemio():
         return jsonify({"error": str(e)}), 500
 
 # --- Conversion DOCX → PDF ---
+def _normaliser_fr(s):
+    """Minuscules + accents retirés — même logique que côté client/admin,
+    pour que la correspondance reste cohérente partout."""
+    import unicodedata
+    s = (s or "").strip().lower()
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+def _dose_numerique(s):
+    m = re.match(r"^[\d.,]+", (s or "").strip())
+    return m.group(0).replace(",", ".") if m else ""
+
+def _resoudre_noms_prescriptions(prescriptions, conn):
+    """Pour les prescriptions par substance (substances_prescrites rempli),
+    remplace le libellé générique ('au choix du client') par la liste des
+    spécialités commerciales qui correspondent réellement — même logique
+    de correspondance stricte que côté client (substance scientifique +
+    dose), pour que le bulletin affiche une information utilisable.
+    Si Florent a choisi une sélection à communiquer (specialites_communiquees,
+    cas des substances très courantes avec plus de 5 équivalents), c'est
+    CETTE sélection qui est utilisée telle quelle, en priorité."""
+    catalogue = None
+    for p in prescriptions:
+        if p.get("specialites_communiquees"):
+            try:
+                noms_choisis = json.loads(p["specialites_communiquees"])
+                if noms_choisis:
+                    p["nom"] = ", ".join(noms_choisis)
+                    continue
+            except Exception:
+                pass
+        if not p.get("substances_prescrites"):
+            continue
+        try:
+            substances = json.loads(p["substances_prescrites"])
+        except Exception:
+            continue
+        if not substances:
+            continue
+        if catalogue is None:
+            catalogue = dicts_from_rows(conn.execute(
+                "SELECT nom, substances_parsees, dose_homologuee FROM catalogue"
+            ).fetchall())
+        voulu = "|".join(sorted(_normaliser_fr(s) for s in substances))
+        dose_voulue = _dose_numerique(p.get("dose_homologuee"))
+        noms = []
+        for c in catalogue:
+            try:
+                subs_c = json.loads(c.get("substances_parsees") or "[]")
+            except Exception:
+                continue
+            presentes = "|".join(sorted(_normaliser_fr(s.get("cle")) for s in subs_c))
+            if presentes != voulu:
+                continue
+            if dose_voulue and _dose_numerique(c.get("dose_homologuee")) != dose_voulue:
+                continue
+            noms.append(c["nom"])
+        if noms:
+            # Avec une substance très courante (ex. soufre), le nombre de
+            # spécialités équivalentes peut dépasser 50 — une liste
+            # complète serait illisible dans le tableau du bulletin.
+            LIMITE = 4
+            if len(noms) <= LIMITE:
+                p["nom"] = ", ".join(noms)
+            else:
+                p["nom"] = ", ".join(noms[:LIMITE]) + f" (+{len(noms) - LIMITE} autres)"
+    return prescriptions
+
 def docx_to_pdf(docx_buf):
     """Convertit un buffer DOCX en buffer PDF."""
     import subprocess
@@ -1598,6 +1671,7 @@ def generer_bulletin(cid):
     av = dict_from_row(av_row) if av_row else {}
     suivi_row = conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone()
     suivi = dict_from_row(suivi_row) if suivi_row else None
+    prescriptions = _resoudre_noms_prescriptions(prescriptions, conn)
     conn.close()
 
     meteo = fetch_meteo_for_client(client)
@@ -1645,6 +1719,7 @@ def generer_tous():
             suivi_row = conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (client['id'],)).fetchone()
             suivi = dict_from_row(suivi_row) if suivi_row else None
             client_meteo = fetch_meteo_for_client(client)
+            prescriptions = _resoudre_noms_prescriptions(prescriptions, conn)
             doc = _build_bulletin(client, av, prescriptions, suivi, client_meteo)
             doc_buf = io.BytesIO(); doc.save(doc_buf); doc_buf.seek(0)
             safe = client["exploitation"].replace(" ","_").replace(".","").replace("/","-")
@@ -2064,6 +2139,7 @@ def email_draft(cid):
     prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
+    prescriptions = _resoudre_noms_prescriptions(prescriptions, conn)
     conn.close()
 
     # Générer le bulletin
@@ -2116,6 +2192,7 @@ def email_draft_tous():
         prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (client['id'],)).fetchall())
         suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (client['id'],)).fetchone())
         client_meteo = fetch_meteo_for_client(client)
+        prescriptions = _resoudre_noms_prescriptions(prescriptions, conn)
         doc = _build_bulletin(client, av, prescriptions, suivi, client_meteo)
         safe = client["exploitation"].replace(" ","_").replace(".","").replace("/","-")
         docx_path = os.path.join(tmp_dir, f"Bulletin_{safe}.docx")
@@ -2629,6 +2706,7 @@ def stocker_bulletins():
             prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
             suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
             meteo = fetch_meteo_for_client(client)
+            prescriptions = _resoudre_noms_prescriptions(prescriptions, conn)
             doc = _build_bulletin(client, av, prescriptions, suivi, meteo)
             buf = io.BytesIO(); doc.save(buf); buf.seek(0)
             safe = client["exploitation"].replace(" ","_").replace(".","").replace("/","-")
@@ -3538,8 +3616,9 @@ def portail_bulletin_pdf_slug(slug):
     prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
-    conn.close()
+    prescriptions = _resoudre_noms_prescriptions(prescriptions, conn)
     meteo = fetch_meteo_for_client(client)
+    conn.close()
     doc = _build_bulletin(client, av, prescriptions, suivi, meteo)
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     pdf_buf = docx_to_pdf(buf)
@@ -3948,8 +4027,9 @@ def portail_bulletin_pdf(token):
     prescriptions = dicts_from_rows(conn.execute("SELECT *, nom_produit AS nom, substance_active AS sa FROM prescriptions WHERE id_client=? ORDER BY id", (cid,)).fetchall())
     av = dict_from_row(conn.execute("SELECT * FROM bulletin_hebdo ORDER BY id DESC LIMIT 1").fetchone()) or {}
     suivi = dict_from_row(conn.execute("SELECT * FROM suivi WHERE id_client=? ORDER BY date_visite DESC LIMIT 1", (cid,)).fetchone())
-    conn.close()
+    prescriptions = _resoudre_noms_prescriptions(prescriptions, conn)
     meteo = fetch_meteo_for_client(client)
+    conn.close()
     doc = _build_bulletin(client, av, prescriptions, suivi, meteo)
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     pdf_buf = docx_to_pdf(buf)

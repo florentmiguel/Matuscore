@@ -539,7 +539,9 @@ function xfAddProdRow(n){
  </div>
  <select id="xf_pr${n}" style="display:none"><option value="">— Choisir —</option></select>
  <input type="hidden" id="xf_substances${n}" value="">
- <input type="hidden" id="xf_cible_choisie${n}" value="">`;
+ <input type="hidden" id="xf_cible_choisie${n}" value="">
+ <input type="hidden" id="xf_specialites_communiquees${n}" value="">
+ <div id="xf_curation${n}"></div>`;
  container.appendChild(div);
 }
 
@@ -809,11 +811,33 @@ function xfChoisirGroupe(n,cle){
   // au regroupement), pas le libellé affiché — pour que la validation
   // côté client retrouve exactement le même ensemble de produits,
   // peu importe lequel des noms usuels variables (ex. "soufre" vs
-  // "Sulphur") est affiché ici.
+  // "Sulphur") est affiché ici. La VALIDATION du client s'appuie toujours
+  // sur l'ensemble complet, même si la communication est réduite ci-dessous.
   document.getElementById('xf_substances'+n).value=JSON.stringify(cle.split('__dose:')[0].split('+'));
   prSel.innerHTML=`<option value="" data-nom="${label} (au choix du client)" selected>${label} — au choix</option>`;
-  const noms=liste.map(p=>p.nom).join(', ');
-  document.getElementById('xf_info'+n).innerHTML=`<strong style="color:var(--gd)">${liste.length} spécialité(s) possible(s)</strong> — le client choisira laquelle à la validation : ${noms}`;
+  document.getElementById('xf_specialites_communiquees'+n).value='';
+  if(liste.length>5){
+   // Trop de spécialités pour toutes les citer utilement — Florent choisit
+   // lesquelles communiquer dans Traitements/Bulletin (la validation
+   // côté client, elle, garde toujours accès à l'ensemble complet).
+   _xfListesPourCuration=_xfListesPourCuration||{};
+   _xfListesPourCuration[n]={liste, cle};
+   const cases=liste.map((p,i)=>
+    `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0;font-size:11px;cursor:pointer">
+      <input type="checkbox" id="xf_curcase${n}_${i}" style="margin:0">${p.nom}
+     </label>`).join('');
+   document.getElementById('xf_curation'+n).innerHTML=`
+    <div style="margin-top:6px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa">
+     <div style="font-size:11px;color:var(--gr);margin-bottom:6px">${liste.length} spécialités correspondent — choisissez celles à communiquer (le client gardera accès à toutes à la validation) :</div>
+     ${cases}
+     <div style="margin-top:6px"><button type="button" class="btn btn-sm bg" onclick="xfValiderCuration(${n})">Valider la sélection</button></div>
+    </div>`;
+   document.getElementById('xf_info'+n).innerHTML=`<strong style="color:var(--or)">${liste.length} spécialités</strong> — sélection à faire ci-dessous avant d'enregistrer`;
+  } else {
+   document.getElementById('xf_curation'+n).innerHTML='';
+   const noms=liste.map(p=>p.nom).join(', ');
+   document.getElementById('xf_info'+n).innerHTML=`<strong style="color:var(--gd)">${liste.length} spécialité(s) possible(s)</strong> — le client choisira laquelle à la validation : ${noms}`;
+  }
  }
  document.getElementById('xf_sa'+n).value=liste[0]?.substance_active||label;
  document.getElementById('xf_ty'+n).value=liste[0]?.type_cps||liste[0]?.type_mfsc||'';
@@ -823,6 +847,18 @@ function xfChoisirGroupe(n,cle){
  document.getElementById('xf_fam'+n).value=liste[0]?.famille||'';
  // La cible est désormais choisie EN AMONT (xf_cible_choisie) — plus besoin
  // de la re-déduire ici après le choix de substance.
+}
+
+let _xfListesPourCuration={};
+
+function xfValiderCuration(n){
+ const {liste,cle}=_xfListesPourCuration[n]||{liste:[]};
+ const choisis=liste.filter((p,i)=>document.getElementById('xf_curcase'+n+'_'+i)?.checked);
+ if(!choisis.length){ alert('Cochez au moins une spécialité à communiquer'); return; }
+ document.getElementById('xf_specialites_communiquees'+n).value=JSON.stringify(choisis.map(p=>p.nom));
+ const noms=choisis.map(p=>p.nom).join(', ');
+ document.getElementById('xf_info'+n).innerHTML=`<strong style="color:var(--gd)">${liste.length} spécialités au total</strong> — communiquées : ${noms}${choisis.length<liste.length?` (le client verra les ${liste.length} à la validation)`:''}`;
+ document.getElementById('xf_curation'+n).innerHTML=`<div style="margin-top:4px;font-size:10px;color:var(--gr)">✓ Sélection enregistrée — <a href="#" onclick="event.preventDefault();xfChoisirGroupe(${n},${JSON.stringify(cle)})">modifier</a></div>`;
 }
 
 async function saveXMulti(){
@@ -846,6 +882,12 @@ async function saveXMulti(){
   const dp=document.getElementById('xf_dp'+i)?.value;
   if(!dp){alert('Renseignez la dose prescrite pour le produit '+i);return;}
   const substancesJson=document.getElementById('xf_substances'+i)?.value||'';
+  const specialitesJson=document.getElementById('xf_specialites_communiquees'+i)?.value||'';
+  // Plus de 5 spécialités équivalentes mais aucune sélection validée pour
+  // la communication -> on bloque, pour ne pas enregistrer une prescription
+  // dont on ne sait pas quoi afficher dans Traitements/Bulletin.
+  const curationEnAttente=(_xfListesPourCuration[i]?.liste?.length||0)>5 && !specialitesJson;
+  if(curationEnAttente){alert('Choisissez les spécialités à communiquer pour le produit '+i+' (bouton "Valider la sélection")');return;}
   prods.push({
    cible:document.getElementById('xf_cible_choisie'+i)?.value||'',
    id_produit:prSel.value||'',
@@ -854,7 +896,8 @@ async function saveXMulti(){
    type_cps:document.getElementById('xf_ty'+i)?.value||'',
    dose_homologuee:document.getElementById('xf_dh'+i)?.value||'',
    dose_prescrite:dp,
-   substances_prescrites:substancesJson
+   substances_prescrites:substancesJson,
+   specialites_communiquees:specialitesJson
   });
  }
  if(prods.length===0){alert('Sélectionnez au moins un produit et renseignez sa dose');return;}
@@ -873,6 +916,7 @@ async function saveXMulti(){
     substance_active:p.substance_active, type_cps:p.type_cps,
     dose_homologuee:p.dose_homologuee, dose_prescrite:p.dose_prescrite,
     substances_prescrites:p.substances_prescrites,
+    specialites_communiquees:p.specialites_communiquees,
     volume_bouillie:vol, observations:obs, date_prevue:datePrevue
    })});
    total++;

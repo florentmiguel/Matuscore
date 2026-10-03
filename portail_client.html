@@ -795,7 +795,7 @@ async function loadData(){
   document.getElementById('clientName').textContent=`${DATA.client.exploitation} — ${DATA.client.commune||''}`;
   renderBulletin();
   renderMeteo();
-  renderTraitements();
+  await renderTraitements();
   renderHistorique();
   renderDocuments();
   // Onglet Protection (bulletin conseil, météo, traitements...) réservé aux clients
@@ -1021,7 +1021,7 @@ function initCal(preselected=[]){
 }
 
 
-function renderTraitements(){
+async function renderTraitements(){
  const presc=DATA.prescriptions; // déjà filtrées sur non-validées
  if(!presc||!presc.length){
   document.getElementById('prescList').innerHTML='<div class="alert al-g" style="text-align:center;padding:20px">✅ Tous les traitements sont validés !</div>';
@@ -1041,6 +1041,37 @@ function renderTraitements(){
   return getN(a)-getN(b);
  });
  document.getElementById('passageLabel').textContent=sortedPassages.join(', ');
+
+ // Pour les prescriptions par substance (plusieurs spécialités possibles),
+ // afficher la liste des spécialités réellement correspondantes plutôt que
+ // l'intitulé générique "au choix du client".
+ let catalogueData=null;
+ try{ catalogueData=await _chargerCatalogueClient(); }catch(e){}
+ // Si Florent a choisi quelles spécialités communiquer (cas des substances
+ // très courantes, ex. soufre, avec plus de 5 équivalents), on affiche
+ // CETTE sélection directement. Sinon, la liste complète si elle tient
+ // raisonnablement (≤5) ; au-delà, repli de sécurité tronqué (ne devrait
+ // plus arriver pour les nouvelles prescriptions, la sélection étant
+ // désormais exigée à la création, mais protège les anciennes données).
+ function libelleProduit(p){
+  if(p.specialites_communiquees){
+   try{
+    const noms=JSON.parse(p.specialites_communiquees);
+    if(noms.length) return noms.join(', ');
+   }catch(e){}
+  }
+  if(!p.substances_prescrites || !catalogueData) return p.nom_produit||'?';
+  let substances=[];
+  try{ substances=JSON.parse(p.substances_prescrites); }catch(e){ return p.nom_produit||'?'; }
+  if(!substances.length) return p.nom_produit||'?';
+  const matches=_produitsCorrespondantExactement(catalogueData.produits||[], substances, p.dose_homologuee);
+  if(!matches.length) return p.nom_produit||'?';
+  const noms=matches.map(m=>m.nom);
+  const LIMITE=4;
+  if(noms.length<=LIMITE) return noms.join(', ');
+  return noms.slice(0,LIMITE).join(', ')+` (+${noms.length-LIMITE} autres)`;
+ }
+
  let h='';
  sortedPassages.forEach(pa=>{
   const plist=passages[pa];
@@ -1057,7 +1088,7 @@ function renderTraitements(){
    const datePrev=p.date_prevue?`📅 Préconisé : ${new Date(p.date_prevue).toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})}`:
     p.date_reelle?`📅 Réalisé : ${p.date_reelle}`:'';
    h+=`<div class="presc-card">
-    <div class="produit">${p.nom_produit||'?'}</div>
+    <div class="produit">${libelleProduit(p)}</div>
     <div class="detail">${p.cible||''} · ${p.type_cps||''} · ${p.substance_active||''}</div>
     <div class="dose">${p.dose_prescrite||p.dose_homologuee||'?'}</div>
     <div class="detail">Volume : ${p.volume_bouillie||'?'} L/ha${datePrev?' · '+datePrev:''}</div>
