@@ -3649,7 +3649,7 @@ def portail_catalogue_slug(slug):
     client = get_client_by_token_or_slug(slug)
     if not client: return jsonify({"error": "Lien invalide"}), 404
     certif = client.get("certification", "Conventionnel")
-    q = "SELECT id, nom, cible, substance_active, substances_parsees, famille, type_cps, dose_homologuee, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
+    q = "SELECT id, nom, cible, substance_active, substances_parsees, usages_json, famille, type_cps, dose_homologuee, unite, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
     if certif == "Bio": q += " AND compatible_bio=1"
     elif certif == "HVE": q += " AND compatible_hve=1"
     conn = get_db()
@@ -3716,7 +3716,7 @@ def portail_catalogue(token):
     client = dict_from_row(conn.execute("SELECT * FROM clients WHERE portail_token=?", (token,)).fetchone())
     if not client: conn.close(); return jsonify({"error": "Token invalide"}), 404
     certif = client.get("certification", "Conventionnel")
-    q = "SELECT id, nom, cible, substance_active, substances_parsees, famille, type_cps, dose_homologuee, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
+    q = "SELECT id, nom, cible, substance_active, substances_parsees, usages_json, famille, type_cps, dose_homologuee, unite, dar, dre, znt, option_abc FROM catalogue WHERE categorie='Phyto'"
     if certif == "Bio": q += " AND compatible_bio=1"
     elif certif == "HVE": q += " AND compatible_hve=1"
     prods = dicts_from_rows(conn.execute(q + " ORDER BY cible, famille, nom").fetchall())
