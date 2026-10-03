@@ -3639,8 +3639,14 @@ def portail_modifier_prescription_slug(slug):
     if not p: conn.close(); return jsonify({"error": "Prescription non trouvée"}), 404
     cat = dict_from_row(conn.execute("SELECT * FROM catalogue WHERE id=?", (new_id_produit,)).fetchone())
     if not cat: conn.close(); return jsonify({"error": "Produit non trouvé"}), 404
-    conn.execute("""UPDATE prescriptions SET id_produit=?, nom_produit=?, substance_active=?, type_cps=?, dose_homologuee=?, dose_prescrite=? WHERE id=?""",
-        (cat["id"], cat["nom"], cat.get("substance_active",""), cat.get("type_cps",""), cat.get("dose_homologuee",""), new_dose or cat.get("dose_homologuee",""), presc_id))
+    # dose_homologuee n'est JAMAIS réécrite ici : le produit choisi l'a été
+    # par correspondance EXACTE sur cette dose précise (propre à la cible
+    # prescrite) — la colonne 'dose_homologuee' du catalogue, elle, est une
+    # valeur simplifiée par produit qui peut appartenir à une tout autre
+    # cible (ex. Acariens au lieu d'Oïdium) et écraserait à tort la bonne
+    # valeur déjà enregistrée sur la prescription.
+    conn.execute("""UPDATE prescriptions SET id_produit=?, nom_produit=?, substance_active=?, type_cps=?, dose_prescrite=? WHERE id=?""",
+        (cat["id"], cat["nom"], cat.get("substance_active",""), cat.get("type_cps",""), new_dose or p["dose_prescrite"], presc_id))
     conn.commit(); conn.close()
     return jsonify({"ok": True})
 
@@ -3806,10 +3812,12 @@ def portail_modifier_prescription(token):
     certif = client.get("certification", "Conventionnel")
     if certif == "Bio" and not cat.get("compatible_bio"):
         conn.close(); return jsonify({"error": "Ce produit n'est pas compatible Bio"}), 400
+    # dose_homologuee n'est JAMAIS réécrite ici — voir le commentaire
+    # équivalent dans la version slug de cette même route.
     conn.execute("""UPDATE prescriptions SET id_produit=?, nom_produit=?, substance_active=?,
-        type_cps=?, dose_homologuee=?, dose_prescrite=? WHERE id=?""",
+        type_cps=?, dose_prescrite=? WHERE id=?""",
         (cat["id"], cat["nom"], cat.get("substance_active",""), cat.get("type_cps",""),
-         cat.get("dose_homologuee",""), new_dose or cat.get("dose_homologuee",""), presc_id))
+         new_dose or p["dose_prescrite"], presc_id))
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": f"Produit modifié → {cat['nom']}"})
 
