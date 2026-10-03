@@ -122,7 +122,6 @@ textarea{min-height:60px}
    <div id="bulletinDate" style="font-size:11px;color:var(--gr);margin-bottom:10px"></div>
    <div id="bulletinContent"></div>
   </div>
-  <button class="btn btn-primary" onclick="downloadPDF()">📥 Télécharger le bulletin PDF</button>
  </div>
 
  <!-- METEO -->
@@ -1409,14 +1408,28 @@ async function _confirmerSpecialite(){
    method:'POST', headers:{'Content-Type':'application/json'},
    body:JSON.stringify({prescription_id:courant.id, id_produit:produitChoisi.id, dose_prescrite:''})
   });
+  // Mettre à jour la copie locale tout de suite : sans ça, l'écran suivant
+  // (récapitulatif avant validation) afficherait encore l'intitulé
+  // générique d'origine plutôt que la spécialité qui vient d'être choisie.
+  const presc=(DATA.all_prescriptions||[]).find(p=>p.id===courant.id);
+  if(presc) presc.nom_produit=produitChoisi.nom;
  }catch(e){ alert('Erreur lors de l\'enregistrement du choix'); return; }
  _resoudreSpecialites(_resolutionIds, _resolutionAmbigues, _resolutionIndex+1);
 }
 
 function _afficherCalendrierValidation(ids){
+ // Rappelle le(s) produit(s) exact(s) sur le point d'être validé(s) — y
+ // compris la spécialité précisément choisie juste avant, pour que ce
+ // choix reste visible plutôt que de disparaître derrière un simple
+ // compteur générique.
+ const noms=ids.map(id=>{
+  const p=(DATA.all_prescriptions||[]).find(x=>x.id===id);
+  return p?.nom_produit||'';
+ }).filter(Boolean);
  document.getElementById('modalContent').innerHTML=`
   <h3 style="color:var(--gd);margin-bottom:4px">Valider le passage</h3>
-  <p style="font-size:13px;margin-bottom:12px;color:var(--gr)">${ids.length} produit(s) — sélectionnez une ou plusieurs dates</p>
+  <p style="font-size:13px;margin-bottom:2px"><strong>${noms.join(', ')}</strong></p>
+  <p style="font-size:12px;margin-bottom:12px;color:var(--gr)">${ids.length} produit(s) — sélectionnez une ou plusieurs dates</p>
   <label style="font-size:12px;color:var(--gr);margin-bottom:6px;display:block">Date(s) du traitement</label>
   <div id="cal-container"></div>
   <div id="cal-recap" style="border-radius:6px;padding:7px 10px;font-size:11px;margin-bottom:12px;background:var(--gbg);color:var(--gr)">Sélectionnez une ou plusieurs dates</div>
@@ -1444,10 +1457,6 @@ async function execValiderPassage(ids){
   ));
   await loadData();
  }catch(e){alert('Erreur lors de la validation');}
-}
-
-function downloadPDF(){
- window.location.href=`${API_BASE}/bulletin-pdf`;
 }
 
 async function renderDocuments(){

@@ -2114,33 +2114,19 @@ def email_draft_tous():
         doc.save(docx_path)
         client_files.append((client, docx_path, safe, "pending"))
 
-    # Phase 2 : Fermer Word puis convertir en batch
-    import subprocess
-    try:
-        subprocess.run(["taskkill", "/f", "/im", "WINWORD.EXE"], capture_output=True, timeout=5)
-        time.sleep(1)
-    except: pass
-    try:
-        import pythoncom
-        pythoncom.CoInitialize()
-        from docx2pdf import convert
-        convert(tmp_dir, tmp_dir)
-        print(f"   ✅ Batch PDF : {len([f for f in client_files if f[3]!='skip'])} fichiers")
-        time.sleep(2)
-        pythoncom.CoUninitialize()
-    except ImportError:
-        print("   ⚠️ docx2pdf non installé — envoi en docx")
-    except Exception as e:
-        print(f"   ⚠️ Batch PDF erreur : {e}")
-        try: pythoncom.CoUninitialize()
-        except: pass
-        # Fallback : conversion individuelle (docx_to_pdf gère CoInitialize)
-        for client, docx_path, safe, status in client_files:
-            if docx_path and status != "skip":
-                pdf_buf = docx_to_pdf(io.BytesIO(open(docx_path, 'rb').read()))
-                if pdf_buf:
-                    pdf_path = docx_path.replace('.docx', '.pdf')
-                    with open(pdf_path, 'wb') as f: f.write(pdf_buf.getvalue())
+    # Phase 2 : conversion en PDF, client par client, via docx_to_pdf
+    # (LibreOffice) — l'ancien chemin tentait d'abord Word COM/docx2pdf,
+    # strictement Windows, qui échoue silencieusement sur le VPS Linux
+    # (ImportError) sans jamais retomber sur la conversion qui fonctionne
+    # réellement ici.
+    for client, docx_path, safe, status in client_files:
+        if docx_path and status != "skip":
+            pdf_buf = docx_to_pdf(io.BytesIO(open(docx_path, 'rb').read()))
+            if pdf_buf:
+                pdf_path = docx_path.replace('.docx', '.pdf')
+                with open(pdf_path, 'wb') as f: f.write(pdf_buf.getvalue())
+            else:
+                print(f"   ⚠️ Conversion PDF échouée pour {safe} — envoi en docx")
 
     # Phase 3 : Créer les brouillons IMAP
     results = []

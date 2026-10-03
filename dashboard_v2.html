@@ -106,11 +106,14 @@ async function init(){
   </div><div style="height:12px"></div>
   <div id="homeAlerts"></div>
   <div class="g2">
-   <div class="card"><div class="ct">🌤️ Météo</div><div id="meteoQ"><button class="btn bb" onclick="fetchMeteo()">Charger</button></div></div>
-   <div class="card"><div class="ct">🍄 Risques</div><div id="riskQ"><p style="color:var(--gr);font-size:10px">Chargez la météo</p></div></div>
+   <div class="card"><div class="ct">🌤️ Météo</div><div id="meteoQ"><p style="color:var(--gr);font-size:10px">Chargement...</p></div></div>
+   <div class="card"><div class="ct">🍄 Risques</div><div id="riskQ"><p style="color:var(--gr);font-size:10px">Chargement...</p></div></div>
   </div>`;
  let al='';CLIENTS.filter(c=>c.certification==='Bio'&&c.cu_cumule>3000).forEach(c=>{al+=`<div class="al al-r"><strong>⚠️ ${c.exploitation}</strong> — Cu ${c.cu_cumule} g/ha</div>`;});
  document.getElementById('homeAlerts').innerHTML=al;
+ // Chargée automatiquement dès l'arrivée sur l'accueil — plus besoin de
+ // cliquer sur "Charger" à chaque fois.
+ fetchMeteo();
 }
 init();
 
