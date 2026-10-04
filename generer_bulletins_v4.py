@@ -21,7 +21,7 @@ from openpyxl import load_workbook
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import nsdecls
+from docx.oxml.ns import nsdecls, qn
 from docx.oxml import parse_xml
 
 try:
@@ -58,6 +58,46 @@ def multi_para(doc, runs):
             run = p.add_run(r.get("t","")); run.font.name="Arial"; run.font.size=Pt(r.get("s",10))
             run.font.color.rgb=rgb(r.get("c",BK)); run.font.bold=r.get("b",False); run.font.italic=r.get("i",False)
     return p
+def parser_dre(dre_brut):
+    """Le DRE est parfois une phrase complète, pas juste un chiffre (ex.
+    '6 heures pour les usages en plein champ et 8 heures pour les
+    applications en milieu fermé'). On garde le premier nombre d'heures
+    pour la colonne DRE, et on renvoie le reste de la phrase séparément
+    pour l'ajouter aux observations plutôt que d'alourdir la colonne."""
+    import re as _re
+    if not dre_brut:
+        return "", ""
+    dre_brut = str(dre_brut)  # SQLite stocke parfois un texte numérique en entier
+    m = _re.match(r"^\s*(\d+)\s*heures?\b(.*)$", dre_brut.strip(), _re.IGNORECASE)
+    if not m:
+        return dre_brut, ""
+    court = m.group(1)
+    reste = m.group(2).strip()
+    # Retire la conjonction de tête ("pour...", "et...") pour ne garder
+    # que l'information complémentaire utile.
+    reste = _re.sub(r"^(pour\s+.*?\bet\s+)", "", reste, flags=_re.IGNORECASE).strip()
+    return court, reste
+
+def set_col_widths(table, widths):
+    """Fixe réellement la largeur des colonnes. cell.width seul ne suffit
+    pas toujours (Word/LibreOffice peuvent recalculer selon le contenu si
+    la table reste en agencement 'auto') — on force explicitement
+    tblLayout=fixed et on définit aussi la grille de colonnes (tblGrid),
+    qui est la source de vérité initiale pour la plupart des moteurs de
+    rendu, en plus de la largeur de chaque cellule."""
+    table.autofit = False
+    table.allow_autofit = False
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+    tblPr.append(parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'))
+    grid = tbl.find(qn('w:tblGrid'))
+    if grid is not None:
+        for gridCol, w in zip(grid.findall(qn('w:gridCol')), widths):
+            gridCol.set(qn('w:w'), str(int(w.cm * 567)))  # cm -> twips (567 par cm)
+    for row in table.rows:
+        for col_idx, w in enumerate(widths):
+            row.cells[col_idx].width = w
+
 def section_heading(doc, num, text, color=GD):
     p = doc.add_paragraph(); p.paragraph_format.space_before=Pt(16); p.paragraph_format.space_after=Pt(8)
     pPr = p._p.get_or_add_pPr()
@@ -367,27 +407,27 @@ def build_bulletin(client, av, prescriptions, suivi, meteo_days):
         styled_para(doc, "Météo non disponible — consultez le Dashboard VITI Sens.", bold=True, color=GR)
 
     # ===== 5. PROGRAMME PHYTO =====
-    # Le bulletin reflète l'état ACTUEL du conseil, pas l'historique complet :
-    # une seule ligne par cible, la plus récente (passage le plus avancé).
-    def _derniere(liste):
-        if not liste: return []
-        def _num(p):
-            pa = (p.get("passage") or "")
-            return int(pa[1:]) if pa[:1] == "T" and pa[1:].isdigit() else (p.get("id") or 0)
-        return [max(liste, key=_num)]
-    presc_mildiou = _derniere(presc_mildiou)
-    presc_oidium = _derniere(presc_oidium)
-    presc_botrytis = _derniere(presc_botrytis)
-    presc_autres = _derniere(presc_autres)
+    # Le bulletin reflète l'état de la DERNIÈRE préconisation, toutes
+    # cibles confondues — pas "le plus récent par cible" (qui mélangerait
+    # des dates de conseil différentes), mais UN SEUL passage global : le
+    # plus avancé parmi TOUTES les prescriptions, quelle que soit sa cible.
+    def _numero(p):
+        pa = (p.get("passage") or "")
+        return int(pa[1:]) if pa[:1] == "T" and pa[1:].isdigit() else (p.get("id") or 0)
+    dernier_passage_num = max((_numero(p) for p in prescriptions), default=None)
+    dernier_passage_label = next(
+        (p["passage"] for p in prescriptions if _numero(p) == dernier_passage_num and p.get("passage")),
+        None
+    )
+    prescriptions_dernier = [p for p in prescriptions if _numero(p) == dernier_passage_num]
+    presc_mildiou = [p for p in prescriptions_dernier if p in presc_mildiou]
+    presc_oidium = [p for p in prescriptions_dernier if p in presc_oidium]
+    presc_botrytis = [p for p in prescriptions_dernier if p in presc_botrytis]
+    presc_autres = [p for p in prescriptions_dernier if p in presc_autres]
 
     section_heading(doc, "5", "PROGRAMME PHYTOSANITAIRE", GD)
-    derniers_passages = " · ".join(
-        f"{lbl} {p['passage']}" for lbl, liste in
-        [("Mildiou", presc_mildiou), ("Oïdium", presc_oidium), ("Botrytis", presc_botrytis), ("Autres", presc_autres)]
-        for p in liste if p.get("passage")
-    )
-    if derniers_passages:
-        styled_para(doc, f"Derniers passages : {derniers_passages}", bold=True, size=9, color=GM)
+    if dernier_passage_label:
+        styled_para(doc, f"Dernier passage : {dernier_passage_label}", bold=True, size=9, color=GM)
     styled_para(doc, f"Certification : {certif} — Cu cumulé : {client['cu_cumule'] or 0} g/ha — Folpel cumulé : {cumul_folpel:.1f} kg/ha ({nb_folpel} traitements)",
         size=9, color=GR)
 
@@ -403,30 +443,39 @@ def build_bulletin(client, av, prescriptions, suivi, meteo_days):
             ("MILDIOU", presc_mildiou, GD), ("OÏDIUM", presc_oidium, GM),
             ("BOTRYTIS", presc_botrytis, "6B4226"), ("AUTRES", presc_autres, GR)]:
             if not presc_list: continue
-            styled_para(doc, cible_label, bold=True, size=12, color=bg_hdr, sb=10)
-            cols = ["Produit","Type","Dose homol.","DOSE PRESCRITE","DAR","DRE","ZNT","Vol.","Observations"]
+            # Bandeau de titre coloré (comme un mini-banner) plutôt que du
+            # simple texte coloré — plus de présence visuelle.
+            bt = doc.add_table(rows=1, cols=1)
+            bc = bt.cell(0,0); shade(bc, bg_hdr)
+            bp = bc.paragraphs[0]; bp.paragraph_format.space_before=Pt(2); bp.paragraph_format.space_after=Pt(2)
+            br = bp.add_run(cible_label); br.font.name="Arial"; br.font.size=Pt(12); br.font.bold=True; br.font.color.rgb=rgb(WH)
+            doc.add_paragraph().paragraph_format.space_after = Pt(2)
+
+            cols = ["Produit","Type","Dose homol.","DOSE PRESCRITE","DAR (en j)","DRE (en h)","ZNT (en m)","Vol.","Observations"]
             t = doc.add_table(rows=1+len(presc_list), cols=len(cols))
-            t.autofit = False
-            largeurs = [Cm(5.3), Cm(1.8), Cm(1.9), Cm(1.9), Cm(1.1), Cm(1.3), Cm(1.1), Cm(1.4), Cm(2.3)]
-            for col_idx, larg in enumerate(largeurs):
-                for row in t.rows:
-                    row.cells[col_idx].width = larg
+            # Produit nettement élargi ; DAR/DRE/ZNT resserrées (valeurs
+            # courtes) pour lui laisser le plus de place possible.
+            set_col_widths(t, [Cm(6.8), Cm(1.6), Cm(1.7), Cm(1.7), Cm(0.9), Cm(1.0), Cm(0.9), Cm(1.2), Cm(2.2)])
             header_row(t, 0, cols, bg=bg_hdr)
             for i, p in enumerate(presc_list):
                 ri = i+1
                 dp = p["dose_prescrite"] or "[à renseigner]"
                 dh = p["dose_homologuee"] or "—"
                 custom = dp and dp != dh and "[" not in str(dp)
+                dre_court, dre_reste = parser_dre(p.get("dre") or "")
+                obs = p["observations"] or ""
+                if dre_reste:
+                    obs = (obs + " — " if obs else "") + dre_reste
                 body_cell(t.cell(ri,0), p["nom"] or "—", bold=True, size=9)
                 body_cell(t.cell(ri,1), p["type_cps"] or "—", size=8)
                 body_cell(t.cell(ri,2), dh, size=8, color=GR)
                 body_cell(t.cell(ri,3), dp, bold=True, size=9, color=RD if custom else BK)
                 shade(t.cell(ri,3), YBG)
                 body_cell(t.cell(ri,4), p.get("dar") or "—", size=8)
-                body_cell(t.cell(ri,5), p.get("dre") or "—", size=8)
+                body_cell(t.cell(ri,5), dre_court or "—", size=8)
                 body_cell(t.cell(ri,6), p.get("znt") or "—", size=8)
                 body_cell(t.cell(ri,7), f"{p['volume_bouillie']} L/ha" if p['volume_bouillie'] else "—", size=8)
-                body_cell(t.cell(ri,8), p["observations"] or "", size=8, color=GR)
+                body_cell(t.cell(ri,8), obs, size=8, color=GR)
                 if p.get("applique") == "Oui":
                     shade(t.cell(ri,0), GBG)
                     body_cell(t.cell(ri,0), f"{p['nom']} ✅", bold=True, size=9)

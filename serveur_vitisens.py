@@ -105,6 +105,10 @@ VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
 VAPID_CLAIM_EMAIL = os.environ.get("VAPID_CLAIM_EMAIL", "florent.miguel@sasu-viti-sens.fr")
 
+# Génération assistée par IA du texte du bulletin (analyse mildiou/oïdium) —
+# désactivée (bouton d'erreur explicite) tant que la clé n'est pas fournie.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
 def _supabase_actif():
     return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
 
@@ -792,6 +796,9 @@ def init_db():
         # client continue cependant de s'appuyer sur substances_prescrites
         # pour retrouver la liste COMPLÈTE, jamais la sélection réduite.
         "ALTER TABLE prescriptions ADD COLUMN specialites_communiquees TEXT",
+        # Campagne — permet de numéroter et parcourir tous les bulletins
+        # d'une saison, comme déjà fait pour les prescriptions.
+        "ALTER TABLE bulletin_hebdo ADD COLUMN campagne TEXT",
     ]:
         try: conn.execute(alter)
         except: pass
@@ -1365,12 +1372,13 @@ def get_bulletin_hebdo():
 def save_bulletin_hebdo():
     d = request.json
     conn = get_db()
-    conn.execute("""INSERT INTO bulletin_hebdo
+    cur = conn.execute("""INSERT INTO bulletin_hebdo
         (numero_av,date_av,maturite,epi,risque_mildiou,reco_mildiou,
         risque_oidium,reco_oidium,gel,mange_bourgeons,
         stade_chard,comment_chard,stade_pn,comment_pn,stade_meunier,comment_meunier,
-        avance,heterogeneite,titre_complement,contenu_complement,texte_phenologie,passage_en_cours,no_presc_motif)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        avance,heterogeneite,titre_complement,contenu_complement,texte_phenologie,passage_en_cours,no_presc_motif,
+        campagne)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (d.get('numero_av'), d.get('date_av'), d.get('maturite'), d.get('epi'),
          d.get('risque_mildiou'), d.get('reco_mildiou'),
          d.get('risque_oidium'), d.get('reco_oidium'),
@@ -1380,9 +1388,32 @@ def save_bulletin_hebdo():
          d.get('stade_meunier'), d.get('comment_meunier'),
          d.get('avance'), d.get('heterogeneite'),
          d.get('titre_complement'), d.get('contenu_complement'),
-         d.get('texte_phenologie'), d.get('passage_en_cours'), d.get('no_presc_motif')))
+         d.get('texte_phenologie'), d.get('passage_en_cours'), d.get('no_presc_motif'),
+         str(datetime.now().year)))
+    nouvel_id = cur.lastrowid
     conn.commit(); conn.close()
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "id": nouvel_id})
+
+@app.route('/api/bulletin-hebdo/historique')
+def historique_bulletin_hebdo():
+    """Liste des bulletins de la campagne en cours (ou demandée), pour
+    pouvoir revenir sur un ancien si besoin — le plus récent en dernier."""
+    conn = get_db()
+    campagne = request.args.get('campagne', str(datetime.now().year))
+    rows = dicts_from_rows(conn.execute(
+        "SELECT id, date_av, risque_mildiou, risque_oidium FROM bulletin_hebdo WHERE campagne=? ORDER BY id",
+        (campagne,)
+    ).fetchall())
+    conn.close()
+    return jsonify(rows)
+
+@app.route('/api/bulletin-hebdo/<int:bid>')
+def un_bulletin_hebdo(bid):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM bulletin_hebdo WHERE id=?", (bid,)).fetchone()
+    conn.close()
+    if not row: return jsonify({"error": "Bulletin introuvable"}), 404
+    return jsonify(dict_from_row(row))
 
 # --- Météo ---
 @app.route('/api/meteo', methods=['GET'])
@@ -1454,45 +1485,99 @@ def get_meteo():
         return jsonify({"error": str(e)}), 500
 
 # --- Analyse épidémiologique ---
-@app.route('/api/epidemio', methods=['GET'])
-def get_epidemio():
-    """Analyse épidémiologique mildiou + oïdium basée sur la météo 7 jours"""
+def _calculer_synthese_epidemio(lat, lon, maturite, receptive):
+    """Logique partagée entre /api/epidemio et la génération de texte par
+    IA — un seul endroit qui interroge Open-Meteo et calcule la synthèse
+    de risque mildiou/oïdium sur 7 jours."""
+    if not req_lib:
+        raise RuntimeError("requests non installé")
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean,dewpoint_2m_min,dewpoint_2m_max,wind_speed_10m_max,leaf_wetness_probability_mean&hourly=soil_moisture_0_to_1cm&timezone=Europe/Paris&forecast_days=7"
+    r = req_lib.get(url, timeout=10)
+    data = r.json(); d = data["daily"]
+
+    meteo_7j = []
+    for i in range(len(d["time"])):
+        tmoy = round((d["temperature_2m_max"][i]+d["temperature_2m_min"][i])/2, 1)
+        tmin = d["temperature_2m_min"][i]
+        pluie = d["precipitation_sum"][i]
+        hr = d.get("relative_humidity_2m_mean", [None]*7)[i]
+        dp_min = d.get("dewpoint_2m_min", [None]*7)[i] if "dewpoint_2m_min" in d else None
+        dp_max = d.get("dewpoint_2m_max", [None]*7)[i] if "dewpoint_2m_max" in d else None
+        dp = round((dp_min+dp_max)/2,1) if dp_min and dp_max else calc_dewpoint(tmoy, hr)
+        lw_api = d.get("leaf_wetness_probability_mean", [None]*7)[i]
+        lw = int(lw_api) if lw_api is not None else calc_leaf_wetness(tmin, dp, hr, pluie)
+        wind = d.get("wind_speed_10m_max", [None]*7)[i]
+        sol_txt = ""
+        hourly = data.get("hourly", {})
+        if "soil_moisture_0_to_1cm" in hourly and "time" in hourly:
+            sm_vals = [hourly["soil_moisture_0_to_1cm"][h] for h in range(len(hourly["time"])) if hourly["time"][h].startswith(d["time"][i]) and hourly["soil_moisture_0_to_1cm"][h] is not None]
+            if sm_vals:
+                sm = round(sum(sm_vals)/len(sm_vals), 3)
+                sol_txt = interpret_soil_moisture(sm)
+        meteo_7j.append({"date":d["time"][i],"tmoy":tmoy,"tmin":tmin,"pluie":pluie,"hr":hr,"dewpoint":dp,"leaf_wetness":lw,"wind":wind,"soil_moisture_txt":sol_txt})
+
+    return meteo_7j, synthese_risque_7j(meteo_7j, maturite, receptive)
+
+@app.route('/api/generer-texte-bulletin', methods=['GET'])
+def generer_texte_bulletin():
+    """Propose un texte mildiou/oïdium (risque + conseil) à partir de la
+    météo 7 jours et du modèle épidémiologique déjà en place — un point de
+    départ à relire et ajuster avant d'enregistrer, pas un texte final
+    automatique."""
+    if not ANTHROPIC_API_KEY:
+        return jsonify({"error": "Génération par IA non configurée sur ce serveur (ANTHROPIC_API_KEY manquante)."}), 400
     try:
-        # Fetch meteo
         lat = request.args.get('lat', COORDS['lat'])
         lon = request.args.get('lon', COORDS['lon'])
         maturite = request.args.get('maturite', 'true').lower() == 'true'
         receptive = request.args.get('receptive', 'true').lower() == 'true'
-        
-        if not req_lib:
-            return jsonify({"error": "requests non installé"}), 500
-        
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean,dewpoint_2m_min,dewpoint_2m_max,wind_speed_10m_max,leaf_wetness_probability_mean&hourly=soil_moisture_0_to_1cm&timezone=Europe/Paris&forecast_days=7"
-        r = req_lib.get(url, timeout=10)
-        data = r.json(); d = data["daily"]
-        
-        meteo_7j = []
-        for i in range(len(d["time"])):
-            tmoy = round((d["temperature_2m_max"][i]+d["temperature_2m_min"][i])/2, 1)
-            tmin = d["temperature_2m_min"][i]
-            pluie = d["precipitation_sum"][i]
-            hr = d.get("relative_humidity_2m_mean", [None]*7)[i]
-            dp_min = d.get("dewpoint_2m_min", [None]*7)[i] if "dewpoint_2m_min" in d else None
-            dp_max = d.get("dewpoint_2m_max", [None]*7)[i] if "dewpoint_2m_max" in d else None
-            dp = round((dp_min+dp_max)/2,1) if dp_min and dp_max else calc_dewpoint(tmoy, hr)
-            lw_api = d.get("leaf_wetness_probability_mean", [None]*7)[i]
-            lw = int(lw_api) if lw_api is not None else calc_leaf_wetness(tmin, dp, hr, pluie)
-            wind = d.get("wind_speed_10m_max", [None]*7)[i]
-            sol_txt = ""
-            hourly = data.get("hourly", {})
-            if "soil_moisture_0_to_1cm" in hourly and "time" in hourly:
-                sm_vals = [hourly["soil_moisture_0_to_1cm"][h] for h in range(len(hourly["time"])) if hourly["time"][h].startswith(d["time"][i]) and hourly["soil_moisture_0_to_1cm"][h] is not None]
-                if sm_vals:
-                    sm = round(sum(sm_vals)/len(sm_vals), 3)
-                    sol_txt = interpret_soil_moisture(sm)
-            meteo_7j.append({"date":d["time"][i],"tmoy":tmoy,"tmin":tmin,"pluie":pluie,"hr":hr,"dewpoint":dp,"leaf_wetness":lw,"wind":wind,"soil_moisture_txt":sol_txt})
-        
-        synthese = synthese_risque_7j(meteo_7j, maturite, receptive)
+        meteo_7j, synthese = _calculer_synthese_epidemio(lat, lon, maturite, receptive)
+
+        prompt = f"""Tu es un conseiller viticole en Champagne. Voici les données météo des 7 prochains jours (Reims/Épernay) et la synthèse du modèle épidémiologique interne :
+
+MÉTÉO 7 JOURS :
+{json.dumps(meteo_7j, ensure_ascii=False, indent=2)}
+
+SYNTHÈSE DU MODÈLE ÉPIDÉMIOLOGIQUE :
+{json.dumps(synthese, ensure_ascii=False, indent=2)}
+
+Rédige, à partir de CES données précises (pas de généralités), un texte court pour chacun des 4 champs suivants, dans le style suivant : phrases courtes, techniques, factuelles, sans emphase ni formules commerciales. Le "risque" explique le niveau de risque et pourquoi (en citant les éléments météo pertinents : pluie, température, humectation foliaire...). Le "conseil" est une recommandation d'action concrète et proportionnée (jamais d'alarmisme si les données ne le justifient pas).
+
+Réponds UNIQUEMENT en JSON valide, sans aucun texte autour, avec exactement ces 4 clés :
+{{"risque_mildiou": "...", "reco_mildiou": "...", "risque_oidium": "...", "reco_oidium": "..."}}"""
+
+        import requests as _req
+        resp = _req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-5",
+                "max_tokens": 1000,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        texte_brut = resp.json()["content"][0]["text"].strip()
+        texte_brut = re.sub(r"^```json\s*|\s*```$", "", texte_brut.strip())
+        textes = json.loads(texte_brut)
+        return jsonify(textes)
+    except Exception as e:
+        return jsonify({"error": f"Erreur de génération : {e}"}), 500
+
+@app.route('/api/epidemio', methods=['GET'])
+def get_epidemio():
+    """Analyse épidémiologique mildiou + oïdium basée sur la météo 7 jours"""
+    try:
+        lat = request.args.get('lat', COORDS['lat'])
+        lon = request.args.get('lon', COORDS['lon'])
+        maturite = request.args.get('maturite', 'true').lower() == 'true'
+        receptive = request.args.get('receptive', 'true').lower() == 'true'
+        _, synthese = _calculer_synthese_epidemio(lat, lon, maturite, receptive)
         return jsonify(synthese)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

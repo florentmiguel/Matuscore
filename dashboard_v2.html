@@ -1181,10 +1181,27 @@ async function savePrescEdit(pid){
 async function delX(id){if(confirm('Supprimer ?')){await api(`/api/prescriptions/${id}`,{method:'DELETE'});loadPresc();}}
 
 // ===== BULLETIN HEBDO =====
+// Tant que ce drapeau est actif, rouvrir l'onglet ne touche à rien — le
+// bulletin en cours (généré mais pas encore sauvegardé) reste tel quel.
+// Il repasse à false juste après une sauvegarde réussie : la PROCHAINE
+// ouverture démarrera alors un nouveau bulletin numéroté, avec les zones
+// mildiou/oïdium vierges et une nouvelle génération automatique.
+let _bhSessionActive=false;
+
 async function loadBH(){
+ if(_bhSessionActive) return; // bulletin en cours non sauvegardé -> on ne touche à rien
  const bh=await aj('/api/bulletin-hebdo');
+ const historique=await aj('/api/bulletin-hebdo/historique').catch(()=>[]);
+ const numero=(historique?.length||0)+1;
+ let selHistorique='<option value="">— Voir un ancien bulletin —</option>';
+ (historique||[]).forEach((h,i)=>{selHistorique+=`<option value="${h.id}">N°${i+1} — ${h.date_av||'sans date'}</option>`;});
+
  document.getElementById('tc-bulletin').innerHTML=`<div class="card">
-  <div class="ct"><span>📝 Bulletin Hebdo</span><button class="btn bg btn-sm" onclick="saveBH()">💾 Sauvegarder</button></div>
+  <div class="ct"><span>📝 Bulletin Hebdo — N°${numero} (campagne ${new Date().getFullYear()})</span><button class="btn bg btn-sm" onclick="saveBH()">💾 Sauvegarder</button></div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+   <select id="bh_historique" onchange="voirAncienBulletin(this.value)" style="width:auto;font-size:11px">${selHistorique}</select>
+  </div>
+  <div id="bh_ancien_apercu" style="display:none;margin-bottom:10px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa;font-size:11px"></div>
   <div style="border:2px dashed var(--gm);background:var(--gbg);border-radius:var(--r);padding:16px;text-align:center;margin-bottom:14px">
    <p style="font-weight:600;color:var(--gd);margin-bottom:6px">📄 Importer un PDF</p>
    <p style="font-size:10px;color:var(--gr);margin-bottom:10px">Le texte sera extrait et les champs pré-remplis</p>
@@ -1199,11 +1216,12 @@ async function loadBH(){
    <div><label>Stade Pinot Noir</label><input id="bh_sp" value="${bh.stade_pn||''}"></div>
    <div><label>Stade Meunier</label><input id="bh_sm" value="${bh.stade_meunier||''}"></div>
   </div>
+  <div id="ia_bh_msg" style="font-size:11px;color:var(--gr);margin-bottom:6px"></div>
   <h4 style="color:var(--or);margin:14px 0 6px">2. Mildiou</h4>
   <div class="fg"><div><label>EPI / Potentiel infectieux</label><input id="bh_ep" value="${bh.epi||''}"></div><div></div>
-   <div><label>Analyse mildiou</label><textarea id="bh_rm">${bh.risque_mildiou||''}</textarea></div><div><label>Recommandation</label><textarea id="bh_xm">${bh.reco_mildiou||''}</textarea></div></div>
+   <div><label>Analyse mildiou</label><textarea id="bh_rm"></textarea></div><div><label>Recommandation</label><textarea id="bh_xm"></textarea></div></div>
   <h4 style="color:var(--gm);margin:14px 0 6px">3. Oïdium</h4>
-  <div class="fg"><div><label>Analyse oïdium</label><textarea id="bh_ro">${bh.risque_oidium||''}</textarea></div><div><label>Recommandation</label><textarea id="bh_xo">${bh.reco_oidium||''}</textarea></div></div>
+  <div class="fg"><div><label>Analyse oïdium</label><textarea id="bh_ro"></textarea></div><div><label>Recommandation</label><textarea id="bh_xo"></textarea></div></div>
   <h4 style="color:var(--gr);margin:14px 0 6px">Autres</h4>
   <div class="fg"><div><label>Gel / Ravageurs</label><textarea id="bh_ge">${bh.gel||''}</textarea></div><div><label>Avance phéno</label><input id="bh_av" value="${bh.avance||''}"></div></div>
   <h4 style="color:var(--rd);margin:14px 0 6px">📋 Pas de traitement prescrit cette semaine ?</h4>
@@ -1228,8 +1246,48 @@ async function loadBH(){
   </div>
   <div id="complPdfList" style="font-size:11px"></div>
  </div>`;
+ // Nouveau bulletin, zones mildiou/oïdium vierges -> génération
+ // automatique, et on marque la session comme "en cours" pour que les
+ // prochaines ouvertures de cet onglet (sans sauvegarde entretemps) ne
+ // touchent plus à rien.
+ _bhSessionActive=true;
+ genererTexteBH();
 }
-async function saveBH(){await api('/api/bulletin-hebdo',{method:'POST',body:JSON.stringify({texte_phenologie:document.getElementById('bh_tp').value,stade_chard:document.getElementById('bh_sc').value,stade_pn:document.getElementById('bh_sp').value,stade_meunier:document.getElementById('bh_sm').value,epi:document.getElementById('bh_ep').value,risque_mildiou:document.getElementById('bh_rm').value,reco_mildiou:document.getElementById('bh_xm').value,risque_oidium:document.getElementById('bh_ro').value,reco_oidium:document.getElementById('bh_xo').value,gel:document.getElementById('bh_ge').value,avance:document.getElementById('bh_av').value,passage_en_cours:document.getElementById('bh_aucun')?.checked?'AUCUN':'',no_presc_motif:document.getElementById('bh_no_presc_motif')?.value||'',titre_complement:document.getElementById('bh_tc').value,contenu_complement:document.getElementById('bh_cc').value})});alert('✅ Sauvegardé');}
+
+function voirAncienBulletin(id){
+ const zone=document.getElementById('bh_ancien_apercu');
+ if(!id){ zone.style.display='none'; return; }
+ aj(`/api/bulletin-hebdo/${id}`).then(b=>{
+  zone.innerHTML=`<strong>Mildiou</strong> — ${b.risque_mildiou||'—'}<br>${b.reco_mildiou||''}<br><br>
+   <strong>Oïdium</strong> — ${b.risque_oidium||'—'}<br>${b.reco_oidium||''}`;
+  zone.style.display='block';
+ });
+}
+async function genererTexteBH(){
+ const msg=document.getElementById('ia_bh_msg');
+ if(!msg) return;
+ msg.textContent='Analyse de la météo 7 jours en cours...';
+ try{
+  const r=await fetch('/api/generer-texte-bulletin');
+  const d=await r.json();
+  if(d.error){ msg.textContent=''; return; } // pas de clé configurée -> silencieux, pas d'alerte
+  // Pré-remplit les 4 champs — relecture/ajustement avant enregistrement
+  // reste au conseiller, ce n'est pas un texte final automatique.
+  document.getElementById('bh_rm').value=d.risque_mildiou||'';
+  document.getElementById('bh_xm').value=d.reco_mildiou||'';
+  document.getElementById('bh_ro').value=d.risque_oidium||'';
+  document.getElementById('bh_xo').value=d.reco_oidium||'';
+  msg.textContent='✅ Texte généré par IA — à relire avant d\'enregistrer.';
+ }catch(e){
+  msg.textContent='';
+ }
+}
+
+async function saveBH(){await api('/api/bulletin-hebdo',{method:'POST',body:JSON.stringify({texte_phenologie:document.getElementById('bh_tp').value,stade_chard:document.getElementById('bh_sc').value,stade_pn:document.getElementById('bh_sp').value,stade_meunier:document.getElementById('bh_sm').value,epi:document.getElementById('bh_ep').value,risque_mildiou:document.getElementById('bh_rm').value,reco_mildiou:document.getElementById('bh_xm').value,risque_oidium:document.getElementById('bh_ro').value,reco_oidium:document.getElementById('bh_xo').value,gel:document.getElementById('bh_ge').value,avance:document.getElementById('bh_av').value,passage_en_cours:document.getElementById('bh_aucun')?.checked?'AUCUN':'',no_presc_motif:document.getElementById('bh_no_presc_motif')?.value||'',titre_complement:document.getElementById('bh_tc').value,contenu_complement:document.getElementById('bh_cc').value})});
+ // Sauvegardé -> la session n'est plus "en cours" : la prochaine ouverture
+ // de l'onglet démarrera un nouveau bulletin numéroté, zones vierges.
+ _bhSessionActive=false;
+ alert('✅ Sauvegardé');}
 async function uploadPDF(input){const f=input.files[0];if(!f)return;document.getElementById('pdfSt').innerHTML='<span style="color:var(--bl)">⏳ Extraction...</span>';
 const fd=new FormData();fd.append('file',f);try{const r=await fetch('/api/upload-pdf',{method:'POST',body:fd});const d=await r.json();
 if(d.error){document.getElementById('pdfSt').innerHTML=`<span style="color:var(--rd)">❌ ${d.error}</span>`;return;}
