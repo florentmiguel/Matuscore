@@ -10,10 +10,13 @@ import math
 import os
 import random
 import shutil
+import sqlite3
 import tempfile
 import types
 import unittest
+import urllib.parse
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
 os.environ.setdefault("EPIDEMIO_PATH", os.path.expanduser("~/epidemio"))
 import brancher_epidemio as br
@@ -38,6 +41,36 @@ def saison(jusqu_a_h=6816):
         lignes.append({"time": t.strftime("%Y-%m-%dT%H:%M"), "temperature_2m": round(temp, 1),
                        "relative_humidity_2m": round(hr), "dew_point_2m": None, "precipitation": pluie})
     return lignes
+
+
+class FauxOpenMeteo:
+    """Open-Meteo simulé à partir de la saison synthétique : archive (00 h-23 h) et prévision (past_days / forecast_days)."""
+
+    def __init__(self, lignes, maintenant, panne=False):
+        self.par_heure = {r["time"]: r for r in lignes}
+        self.maintenant, self.panne, self.appels = maintenant, panne, []
+
+    def __call__(self, url):
+        if self.panne:
+            raise RuntimeError("Open-Meteo injoignable")
+        q = {k: v[0] for k, v in parse_qs(urlparse(url).query).items()}
+        if "archive-api" in url:
+            debut = datetime.fromisoformat(q["start_date"]).replace(tzinfo=UTC)
+            fin = datetime.fromisoformat(q["end_date"]).replace(tzinfo=UTC) + timedelta(hours=23)
+            self.appels.append("archive")
+        else:
+            minuit = datetime.combine(self.maintenant.date(), datetime.min.time(), tzinfo=UTC)
+            debut = minuit - timedelta(days=int(q["past_days"]))
+            fin = minuit + timedelta(days=int(q["forecast_days"])) - timedelta(hours=1)
+            self.appels.append("prevision")
+        heures, t = [], debut
+        while t <= fin:
+            heures.append(t.strftime("%Y-%m-%dT%H:%M"))
+            t += timedelta(hours=1)
+        lignes = [self.par_heure.get(h) for h in heures]
+        col = lambda v: [l[v] if l else None for l in lignes]                        # noqa: E731
+        return {"hourly": {"time": heures, "temperature_2m": col("temperature_2m"), "relative_humidity_2m": col("relative_humidity_2m"),
+                           "dew_point_2m": col("dew_point_2m"), "precipitation": col("precipitation")}}
 
 
 def ev(date, force, prev=False, taches=None, tprev=False):
@@ -69,17 +102,29 @@ def faux_resultat():
 
 
 class Base(unittest.TestCase):
+    """Chaque test a son propre dossier de données (historique SQLite) et ses propres variables d'environnement."""
+    VARIABLES = ("EPIDEMIO_DATA_DIR", "EPIDEMIO_ARCHIVE", "EPIDEMIO_TTL_S")
+
     def setUp(self):
-        self.cache = tempfile.mkdtemp()
-        self.ancien = os.environ.get("EPIDEMIO_CACHE_DIR")
-        os.environ["EPIDEMIO_CACHE_DIR"] = self.cache
+        self.donnees = tempfile.mkdtemp()
+        self.anciennes = {k: os.environ.get(k) for k in self.VARIABLES}
+        os.environ["EPIDEMIO_DATA_DIR"] = self.donnees
+        os.environ.pop("EPIDEMIO_ARCHIVE", None)
+        os.environ.pop("EPIDEMIO_TTL_S", None)
+        ep._HISTORIQUES.clear()
+        ep._PANNE_JUSQU = 0.0
+        self.lignes = saison()
+        self.faux = FauxOpenMeteo(self.lignes, NOW)
 
     def tearDown(self):
-        if self.ancien is None:
-            os.environ.pop("EPIDEMIO_CACHE_DIR", None)
-        else:
-            os.environ["EPIDEMIO_CACHE_DIR"] = self.ancien
-        shutil.rmtree(self.cache, ignore_errors=True)
+        for k, v in self.anciennes.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        ep._HISTORIQUES.clear()
+        ep._PANNE_JUSQU = 0.0
+        shutil.rmtree(self.donnees, ignore_errors=True)
 
 
 class TestConversion(unittest.TestCase):
@@ -99,50 +144,63 @@ class TestConversion(unittest.TestCase):
         self.assertEqual(rows[0]["t"], datetime(2026, 5, 1, 0, 0, tzinfo=UTC))
 
 
-class TestCache(Base):
-    def setUp(self):
-        super().setUp()
-        self.appels = 0
+class TestHistoriqueLocal(Base):
+    def test_demarrage_a_froid_puis_rafraichissement_economique(self):
+        lignes, infos = ep.serie_horaire(49.25, 3.96, NOW, self.faux)
+        self.assertEqual(len(lignes), 6816)
+        self.assertEqual(self.faux.appels, ["archive", "prevision"])
+        self.assertEqual(infos["unites_open_meteo"], 20.43)
+        self.assertEqual((infos["meteo_perimee"], infos["meteo_trous"]), (False, 0))
+        self.assertEqual(infos["meteo_age_s"], 0)
+        # 2 h plus tard : une seule requête de prévision, environ 20 fois moins d'unités
+        self.faux.appels.clear()
+        _, infos = ep.serie_horaire(49.25, 3.96, NOW + timedelta(hours=2), self.faux)
+        self.assertEqual(self.faux.appels, ["prevision"])
+        self.assertEqual(infos["unites_open_meteo"], 1.07)
 
-    def recup(self, lat, lon):
-        self.appels += 1
-        return [{"time": "2026-01-01T00:00", "temperature_2m": 1.0}]
+    def test_dans_la_duree_de_vie_aucun_appel(self):
+        ep.serie_horaire(49.25, 3.96, NOW, self.faux)
+        self.faux.appels.clear()
+        _, infos = ep.serie_horaire(49.25, 3.96, NOW + timedelta(minutes=20), self.faux)
+        self.assertEqual((self.faux.appels, infos["unites_open_meteo"]), ([], 0.0))
+        self.assertEqual(infos["meteo_age_s"], 20 * 60)
 
-    def test_deuxieme_appel_vient_du_cache(self):
-        _, age, perimee = ep.serie_horaire(49.25, 3.96, NOW, self.recup)
-        self.assertEqual((self.appels, perimee), (1, False))
-        _, age, perimee = ep.serie_horaire(49.25, 3.96, NOW, self.recup)
-        self.assertEqual((self.appels, perimee), (1, False))
-        self.assertGreaterEqual(age, 0)
+    def test_la_duree_de_vie_se_regle_dans_l_environnement(self):
+        os.environ["EPIDEMIO_TTL_S"] = "0"
+        ep.serie_horaire(49.25, 3.96, NOW, self.faux)
+        self.faux.appels.clear()
+        ep.serie_horaire(49.25, 3.96, NOW + timedelta(minutes=5), self.faux)
+        self.assertEqual(self.faux.appels, ["prevision"])
 
-    def test_cache_expire_apres_la_duree_de_vie(self):
-        ep.serie_horaire(49.25, 3.96, NOW, self.recup, ttl_s=3600)
-        ep.serie_horaire(49.25, 3.96, NOW, self.recup, ttl_s=-1)                    # tout âge dépasse -1 s : on recharge
-        self.assertEqual(self.appels, 2)
+    def test_panne_du_service_meteo_l_historique_stocke_sert_quand_meme(self):
+        ep.serie_horaire(49.25, 3.96, NOW, self.faux)
+        self.faux.panne = True
+        lignes, infos = ep.serie_horaire(49.25, 3.96, NOW + timedelta(hours=3), self.faux)
+        self.assertEqual(len(lignes), 6816)
+        self.assertTrue(infos["meteo_perimee"])
+        self.assertIn("injoignable", infos["erreur_meteo"])
+        self.assertEqual(infos["meteo_age_s"], 3 * 3600)
 
-    def test_une_position_differente_a_son_propre_cache(self):
-        ep.serie_horaire(49.25, 3.96, NOW, self.recup)
-        ep.serie_horaire(49.10, 3.80, NOW, self.recup)
-        self.assertEqual(self.appels, 2)
+    def test_panne_sans_aucune_donnee_stockee(self):
+        self.faux.panne = True
+        with self.assertRaises(ep.MoteurIndisponible) as e:
+            ep.serie_horaire(49.25, 3.96, NOW, self.faux)
+        self.assertIn("injoignable", str(e.exception))
 
-    def test_panne_du_service_meteo_avec_cache_perime(self):
-        ep.serie_horaire(49.25, 3.96, NOW, self.recup)
+    def test_mode_sans_archive_exige_un_amorcage(self):
+        os.environ["EPIDEMIO_ARCHIVE"] = "0"
+        with self.assertRaises(ep.MoteurIndisponible) as e:
+            ep.serie_horaire(49.25, 3.96, NOW, self.faux)
+        self.assertIn("ne commence pas le 1er janvier", str(e.exception))
+        self.assertNotIn("archive", self.faux.appels)                              # l'API historique n'a JAMAIS été appelée
 
-        def panne(lat, lon):
-            raise OSError("Open-Meteo injoignable")
-        lignes, age, perimee = ep.serie_horaire(49.25, 3.96, NOW, panne, ttl_s=-1)
-        self.assertTrue(perimee)
-        self.assertEqual(len(lignes), 1)
-
-    def test_panne_sans_cache_remonte_l_erreur(self):
-        def panne(lat, lon):
-            raise OSError("Open-Meteo injoignable")
-        with self.assertRaises(OSError):
-            ep.serie_horaire(49.25, 3.96, NOW, panne)
-
-    def test_aucun_fichier_temporaire_ne_reste(self):
-        ep.serie_horaire(49.25, 3.96, NOW, self.recup)
-        self.assertEqual([f for f in os.listdir(self.cache) if f.endswith(".tmp")], [])
+    def test_mode_sans_archive_apres_import_ne_fait_que_de_la_prevision(self):
+        os.environ["EPIDEMIO_ARCHIVE"] = "0"
+        ep.historique().importer_lignes(49.25, 3.96, self.lignes, now=NOW)
+        lignes, infos = ep.serie_horaire(49.25, 3.96, NOW, self.faux)
+        self.assertEqual(len(lignes), 6816)
+        self.assertEqual(self.faux.appels, ["prevision"])
+        self.assertEqual(infos["unites_open_meteo"], 1.07)
 
 
 class TestSynthese(unittest.TestCase):
@@ -198,8 +256,15 @@ class TestSynthese(unittest.TestCase):
 
     def test_alerte_si_meteo_perimee(self):
         s = ep.synthese_mildiou(faux_resultat(), now=NOW, meta={"profil": "p", "meteo_perimee": True, "meteo_age_s": 7300})
-        self.assertIn("2 h", s["alerte_meteo"])
+        self.assertIn("depuis 2 h", s["alerte_meteo"])
         self.assertNotIn("alerte_meteo", self.s)
+
+    def test_alerte_si_heures_manquantes(self):
+        s = ep.synthese_mildiou(faux_resultat(), now=NOW, meta={"profil": "p", "meteo_trous": 5})
+        self.assertIn("5 heure(s) manquante(s)", s["alerte_meteo"])
+        s = ep.synthese_mildiou(faux_resultat(), now=NOW, meta={"profil": "p", "meteo_perimee": True, "meteo_age_s": 3600,
+                                                                 "meteo_trous": 2})
+        self.assertIn(" ; ", s["alerte_meteo"])                                    # les deux alertes se cumulent
 
 
 class TestMoteurReel(Base):
@@ -207,11 +272,12 @@ class TestMoteurReel(Base):
 
     def test_calcul_et_synthese(self):
         try:
-            res, meta = ep.calculer(49.25, 3.96, now=NOW, recuperer=lambda a, b: saison())
+            res, meta = ep.calculer(49.25, 3.96, now=NOW, get=self.faux)
         except ep.MoteurIndisponible as e:
             self.skipTest(str(e))
         self.assertEqual(meta["profil"], "calage_2026")
         self.assertFalse(meta["meteo_perimee"])
+        self.assertEqual(meta["unites_open_meteo"], 20.43)
         self.assertGreater(len(res["cycles"]), 0)
         s = ep.synthese_mildiou(res, now=NOW, meta=meta)
         json.dumps(s)
@@ -236,7 +302,9 @@ class TestPrompt(unittest.TestCase):
     def test_sans_moteur_ancien_contenu_inchange(self):
         b = ep.bloc_epidemio_prompt(self.ANCIENNE, None)
         self.assertTrue(b.startswith("SYNTHÈSE DU MODÈLE ÉPIDÉMIOLOGIQUE :\n"))
-        self.assertEqual(json.loads(b.split("\n", 1)[1]), self.ANCIENNE)
+        donnees = b.split("\n", 1)[1].split("\n\nCONSIGNE DE RÉDACTION")[0]
+        self.assertEqual(json.loads(donnees), self.ANCIENNE)                          # les données restent celles de l'ancien modèle
+        self.assertIn("CONSIGNE DE RÉDACTION", b)                                      # mais la forme demandée est la nouvelle
 
     def test_avec_moteur_le_mildiou_vient_du_moteur_et_l_oidium_de_l_ancien(self):
         b = ep.bloc_epidemio_prompt(self.ANCIENNE, ep.synthese_mildiou(faux_resultat(), now=NOW))
@@ -260,8 +328,8 @@ class TestRoute(Base):
         app.register_blueprint(ep.bp_epidemio)
         self.client = app.test_client()
         self.calculer_orig = ep.calculer
-        ep.calculer = lambda lat, lon, now=None, recuperer=None: (faux_resultat(), {"profil": "calage_2026", "meteo_perimee": False,
-                                                                                    "meteo_age_s": 0})
+        ep.calculer = lambda lat, lon, now=None, get=None: (faux_resultat(), {"profil": "calage_2026", "meteo_perimee": False,
+                                                                              "meteo_age_s": 0})
         self.synth_ancienne = ep.synthese_mildiou
         ep.synthese_mildiou = lambda res, now=None, **k: self.synth_ancienne(res, now=NOW, **k)
 
@@ -292,6 +360,21 @@ class TestRoute(Base):
         ep.calculer = invalide
         self.assertEqual(self.client.get("/api/epidemio-moteur?lat=abc").status_code, 400)
 
+    def test_route_etat_de_l_historique_et_des_appels(self):
+        h = ep.historique()
+        h.importer_lignes(49.25, 3.96, self.lignes_courtes(), now=NOW)
+        r = self.client.get("/api/epidemio-moteur/etat?lat=49.25&lon=3.96")
+        self.assertEqual(r.status_code, 200)
+        d = r.get_json()
+        self.assertEqual(d["historique"]["heures"], 48)
+        self.assertEqual(d["usage"]["unites"], 0.0)
+        self.assertTrue(d["archive_autorisee"])
+        self.assertEqual(d["limites_offre_gratuite"]["par_jour"], 10000)
+        self.assertEqual(self.client.get("/api/epidemio-moteur/etat?lat=abc").status_code, 400)
+
+    def lignes_courtes(self):
+        return [r for r in saison(48)]
+
     def test_autre_panne_donne_502(self):
         def panne(*a, **k):
             raise RuntimeError("Open-Meteo")
@@ -299,9 +382,424 @@ class TestRoute(Base):
         self.assertEqual(self.client.get("/api/epidemio-moteur").status_code, 502)
 
 
-STUB = '''import json
+class TestTendance(unittest.TestCase):
+    def evts(self, recente=0.0, prevue=0.0):
+        e = []
+        if recente:
+            e.append({"date": "2026-10-01", "force_dh": recente})                       # dans les 7 derniers jours
+        if prevue:
+            e.append({"date": "2026-10-07", "force_dh": prevue})                        # dans les 7 prochains
+        return e
+
+    def libelle(self, recente, prevue):
+        return ep._tendance(self.evts(recente, prevue), NOW)["libelle"]
+
+    def test_les_cinq_libelles(self):
+        self.assertEqual(self.libelle(0, 0), "PRESSION FAIBLE")
+        self.assertEqual(self.libelle(30, 40), "PRESSION FAIBLE")                        # les deux sous 50 °C·h
+        self.assertEqual(self.libelle(100, 150), "PRESSION EN HAUSSE")
+        self.assertEqual(self.libelle(100, 100), "PRESSION STABLE")
+        self.assertEqual(self.libelle(100, 60), "PRESSION EN BAISSE")
+        self.assertEqual(self.libelle(0, 80), "PRESSION EN HAUSSE")                      # rien avant, quelque chose après
+        self.assertEqual(self.libelle(200, 0), "PRESSION EN BAISSE")
+
+    def test_bornes_des_rapports(self):
+        self.assertEqual(self.libelle(100, 125), "PRESSION EN HAUSSE")                  # exactement x1,25
+        self.assertEqual(self.libelle(100, 124), "PRESSION STABLE")
+        self.assertEqual(self.libelle(100, 75), "PRESSION EN BAISSE")                   # exactement x0,75
+        self.assertEqual(self.libelle(100, 76), "PRESSION STABLE")
+
+    def test_fenetres_de_comptage(self):
+        e = [{"date": "2026-09-27", "force_dh": 500}, {"date": "2026-09-28", "force_dh": 10},       # J-8 exclu, J-7 inclus
+             {"date": "2026-10-05", "force_dh": 20}, {"date": "2026-10-12", "force_dh": 30},        # J et J+7 inclus
+             {"date": "2026-10-13", "force_dh": 700}]                                                 # J+8 exclu
+        r = ep._tendance(e, NOW)
+        self.assertEqual((r["charge_recente_dh"], r["charge_prevue_dh"]), (10.0, 50.0))
+
+    def test_dans_la_synthese_le_titre_reprend_le_libelle(self):
+        s = ep.synthese_mildiou(faux_resultat(), now=NOW)
+        self.assertEqual(s["tendance"]["libelle"], "PRESSION EN HAUSSE")
+        self.assertEqual((s["tendance"]["charge_recente_dh"], s["tendance"]["charge_prevue_dh"]), (258.0, 1410.0))
+        self.assertEqual(s["titre"], "RISQUE MILDIOU — PRESSION EN HAUSSE")
+        self.assertIn("regle", s["tendance"])
+
+
+class TestTitreOidium(unittest.TestCase):
+    def jours(self, *niv_scores):
+        return {"risques_oidium": [{"risque": n, "score": s} for n, s in niv_scores]}
+
+    def test_niveaux(self):
+        self.assertEqual(ep.titre_oidium(self.jours(*[("Nul", 0)] * 7)), "RISQUE OÏDIUM — PRESSION NULLE")
+        self.assertEqual(ep.titre_oidium(self.jours(*[("Faible", 20)] * 7)), "RISQUE OÏDIUM — PRESSION FAIBLE")
+        self.assertEqual(ep.titre_oidium(self.jours(*[("Modéré", 35)] * 7)), "RISQUE OÏDIUM — PRESSION MODÉRÉE")
+        self.assertEqual(ep.titre_oidium(self.jours(("Modéré", 35), *[("Élevé", 55)] * 6)), "RISQUE OÏDIUM — PRESSION ÉLEVÉE")
+
+    def test_tendance_sur_les_trois_premiers_et_trois_derniers_jours(self):
+        montee = self.jours(("Faible", 10), ("Faible", 10), ("Faible", 10), ("Faible", 20), ("Modéré", 40), ("Modéré", 40), ("Modéré", 40))
+        self.assertEqual(ep.titre_oidium(montee), "RISQUE OÏDIUM — PRESSION MODÉRÉE ET EN HAUSSE")
+        descente = self.jours(("Modéré", 40), ("Modéré", 40), ("Modéré", 40), ("Faible", 20), ("Faible", 10), ("Faible", 10), ("Faible", 10))
+        self.assertEqual(ep.titre_oidium(descente), "RISQUE OÏDIUM — PRESSION MODÉRÉE ET EN BAISSE")
+        stable = self.jours(*[("Modéré", 35)] * 3, *[("Modéré", 38)] * 4)
+        self.assertEqual(ep.titre_oidium(stable), "RISQUE OÏDIUM — PRESSION MODÉRÉE")      # écart de 3 points : pas de tendance
+
+    def test_pas_de_tendance_sur_une_serie_trop_courte_ou_sans_risque(self):
+        self.assertEqual(ep.titre_oidium(self.jours(("Faible", 5), ("Faible", 50), ("Faible", 60))), "RISQUE OÏDIUM — PRESSION FAIBLE")
+        self.assertEqual(ep.titre_oidium(self.jours(*[("Nul", 0)] * 3, *[("Nul", 40)] * 4)), "RISQUE OÏDIUM — PRESSION NULLE")
+
+    def test_sans_donnees(self):
+        self.assertIsNone(ep.titre_oidium(None))
+        self.assertIsNone(ep.titre_oidium({"risques_oidium": []}))
+
+
+class TestConsigne(unittest.TestCase):
+    def test_forme_et_titres_imposes(self):
+        c = ep.consigne_redaction({"mildiou": "RISQUE MILDIOU — PRESSION EN HAUSSE", "oidium": "RISQUE OÏDIUM — PRESSION FAIBLE"})
+        self.assertIn("« RISQUE MILDIOU — PRESSION EN HAUSSE »", c)
+        self.assertIn("« RISQUE OÏDIUM — PRESSION FAIBLE »", c)
+        self.assertIn("3 ou 4 paragraphes", c)
+        self.assertIn("100 à 150 mots", c)
+        self.assertIn("sans style télégraphique", c)
+        self.assertIn("N'écris jamais « modèle »", c)
+        self.assertIn("s'écrivent \\n", c)
+
+    def test_sans_titre_l_ia_le_deduit(self):
+        c = ep.consigne_redaction({})
+        self.assertIn("que tu déduis des données", c)
+        self.assertNotIn("RISQUE MILDIOU — PRESSION", c)
+
+    def test_le_bloc_avec_moteur_impose_les_deux_titres_calcules(self):
+        ancienne = {"risques_oidium": [{"risque": "Modéré", "score": 35}] * 7, "texte_oidium": "x"}
+        b = ep.bloc_epidemio_prompt(ancienne, ep.synthese_mildiou(faux_resultat(), now=NOW))
+        self.assertIn("« RISQUE MILDIOU — PRESSION EN HAUSSE »", b)
+        self.assertIn("« RISQUE OÏDIUM — PRESSION MODÉRÉE »", b)
+        self.assertTrue(b.rstrip().endswith("s'écrivent \\n."))                          # la consigne est la dernière chose lue
+
+
+class TestGeocodage(Base):
+    def geo(self, resultats=None, panne=False, seulement_avec_tiret=False):
+        appels = []
+
+        def get_json(url):
+            appels.append(url)
+            if panne:
+                raise OSError("réseau")
+            nom = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["name"][0]
+            if seulement_avec_tiret and "-" not in nom:
+                return {}
+            return {"results": resultats or []}
+        get_json.appels = appels
+        return get_json
+
+    AY_MOSELLE = {"name": "Ay", "latitude": 49.1, "longitude": 6.3, "admin1": "Grand Est", "admin2": "Moselle"}
+    AY_MARNE = {"name": "Aÿ-Champagne", "latitude": 49.05, "longitude": 4.0, "admin1": "Grand Est", "admin2": "Marne"}
+
+    def test_choisit_la_marne_et_ecarte_les_homonymes_hors_zone(self):
+        g = self.geo([self.AY_MOSELLE, self.AY_MARNE])
+        self.assertEqual(ep.geocoder_commune("AY", g, NOW), (49.05, 4.0))
+        self.assertIn("countryCode=FR", g.appels[0])                                    # recherche limitée à la France
+
+    def test_resultat_hors_zone_champagne_refuse(self):
+        self.assertIsNone(ep.geocoder_commune("AY", self.geo([self.AY_MOSELLE]), NOW))
+
+    def test_a_defaut_de_la_marne_le_grand_est_dans_la_zone(self):
+        aube = {"name": "Bar-sur-Seine", "latitude": 48.11, "longitude": 4.37, "admin1": "Grand Est", "admin2": "Aube"}
+        self.assertEqual(ep.geocoder_commune("Bar sur Seine", self.geo([aube]), NOW), (48.11, 4.37))
+
+    def test_reussite_memorisee_pour_toujours(self):
+        ep.geocoder_commune("AY", self.geo([self.AY_MARNE]), NOW)
+        panne = self.geo(panne=True)
+        self.assertEqual(ep.geocoder_commune("ay", panne, NOW + timedelta(days=400)), (49.05, 4.0))
+        self.assertEqual(panne.appels, [])                                              # aucun appel au géocodeur
+
+    def test_echec_memorise_sept_jours(self):
+        ep.geocoder_commune("INCONNUE", self.geo([]), NOW)
+        autre = self.geo([self.AY_MARNE])
+        self.assertIsNone(ep.geocoder_commune("INCONNUE", autre, NOW + timedelta(days=6)))
+        self.assertEqual(autre.appels, [])
+        self.assertEqual(ep.geocoder_commune("INCONNUE", autre, NOW + timedelta(days=8)), (49.05, 4.0))
+
+    def test_une_panne_reseau_n_est_pas_memorisee(self):
+        self.assertIsNone(ep.geocoder_commune("AY", self.geo(panne=True), NOW))
+        self.assertEqual(ep.geocoder_commune("AY", self.geo([self.AY_MARNE]), NOW), (49.05, 4.0))
+
+    def test_essaie_le_nom_avec_tirets(self):
+        g = self.geo([self.AY_MARNE], seulement_avec_tiret=True)
+        self.assertEqual(ep.geocoder_commune("SAINT MARTIN D'ABLOIS", g, NOW), (49.05, 4.0))
+        self.assertEqual(len(g.appels), 2)
+
+    def test_cle_commune(self):
+        self.assertEqual(ep.cle_commune("Saint-Martin d'Ablois"), ep.cle_commune("SAINT MARTIN D'ABLOIS"))
+        self.assertEqual(ep.cle_commune(None), "")
+
+
+class TestPosition(Base):
+    MARNE = {"name": "Reims", "latitude": 49.26, "longitude": 4.03, "admin1": "Grand Est", "admin2": "Marne"}
+
+    def test_coordonnees_du_client_prioritaires(self):
+        def jamais(url):
+            raise AssertionError("le géocodeur ne doit pas être appelé")
+        p = ep.resoudre_position({"commune": "BRIMONT", "latitude": 49.336, "longitude": 4.023}, jamais, NOW)
+        self.assertEqual((p["lat"], p["lon"], p["source"]), (49.336, 4.023, "client"))
+
+    def test_sans_coordonnees_geocodage_de_la_commune(self):
+        g = lambda url: {"results": [self.MARNE]}                                       # noqa: E731
+        for vide in ({}, {"latitude": None, "longitude": None}, {"latitude": 0, "longitude": 0}, {"latitude": "", "longitude": ""}):
+            ep._HISTORIQUES.clear()
+            p = ep.resoudre_position({"commune": "REIMS", **vide}, g, NOW)
+            self.assertEqual((p["source"], p["lat"]), ("geocodage", 49.26), vide)
+
+    def test_coordonnees_aberrantes_ignorees(self):
+        g = lambda url: {"results": [self.MARNE]}                                       # noqa: E731
+        p = ep.resoudre_position({"commune": "REIMS", "latitude": 40.7, "longitude": -74.0}, g, NOW)
+        self.assertEqual(p["source"], "geocodage")
+
+    def test_rien_pour_situer_le_client(self):
+        self.assertIsNone(ep.resoudre_position({"commune": "", "latitude": None}, lambda u: {}, NOW))
+        self.assertIsNone(ep.resoudre_position({"commune": "INTROUVABLE"}, lambda u: {"results": []}, NOW))
+
+
+class TestPhraseCommune(unittest.TestCase):
+    def syn(self):
+        return ep.synthese_mildiou(faux_resultat(), now=NOW)
+
+    def test_liste_dates_fr(self):
+        self.assertEqual(ep.liste_dates_fr([]), "")
+        self.assertEqual(ep.liste_dates_fr(["2026-10-06"]), "le 06/10")
+        self.assertEqual(ep.liste_dates_fr(["2026-10-10", "2026-10-06", "2026-10-09"]), "les 06, 09 et 10/10")
+        self.assertEqual(ep.liste_dates_fr(["2026-09-30", "2026-10-02", "2026-10-05"]), "les 30/09, 02/10 et 05/10")
+        self.assertEqual(ep.liste_dates_fr(["2026-10-06", "2026-10-06"]), "le 06/10")
+
+    def test_infection_attendue_taches_et_tendance(self):
+        t = ep.phrase_commune(self.syn(), NOW)
+        self.assertIn("Les conditions favorables à une infection très forte sont attendues autour du 07/10.", t)
+        self.assertIn("Des sorties de taches sont attendues les 05, 06, 07 et 08/10.", t)
+        self.assertTrue(t.endswith("La pression est en hausse : la vigilance reste de mise."))
+
+    def test_jamais_de_contamination_averee(self):
+        t = ep.phrase_commune(self.syn(), NOW).lower()
+        for mot in ("contamination avérée", "dégâts", "moteur", "modèle"):
+            self.assertNotIn(mot, t)
+
+    def test_rien_d_attendu(self):
+        syn = {"infections_primaires": {"evenements": []}, "infections_secondaires": {"evenements": []},
+               "sorties_taches_attendues": [], "tendance": {"libelle": "PRESSION FAIBLE"}}
+        self.assertEqual(ep.phrase_commune(syn, NOW), "Aucune infection significative n'est attendue dans les 7 prochains jours. "
+                                                      "La pression reste faible à ce stade.")
+
+    def test_infection_passee_seulement(self):
+        syn = {"infections_primaires": {"evenements": [{"date": "2026-10-03", "niveau": "modérée", "force_dh": 90.0}]},
+               "infections_secondaires": {"evenements": []}, "sorties_taches_attendues": [{"date": "2026-10-11"}],
+               "tendance": {"libelle": "PRESSION EN BAISSE"}}
+        t = ep.phrase_commune(syn, NOW)
+        self.assertEqual(t, "Les conditions favorables à une infection modérée ont été réunies le 03/10. "
+                            "Des sorties de taches sont attendues le 11/10. La pression diminue progressivement.")
+
+    def test_une_infection_de_plus_de_trois_jours_n_est_plus_citee(self):
+        syn = {"infections_primaires": {"evenements": [{"date": "2026-09-30", "niveau": "forte", "force_dh": 150.0}]},
+               "infections_secondaires": {"evenements": []}, "sorties_taches_attendues": [],
+               "tendance": {"libelle": "PRESSION STABLE"}}
+        self.assertTrue(ep.phrase_commune(syn, NOW).startswith("Aucune infection significative"))
+
+
+class TestRisqueJour(unittest.TestCase):
+    def test_libelles_et_seuils(self):
+        attendu = [(0, "Nul"), (None, "Nul"), (0.1, "Faible"), (49.9, "Faible"), (50, "Modéré"), (99.9, "Modéré"),
+                   (100, "Élevé"), (199.9, "Élevé"), (200, "Très élevé"), (900, "Très élevé")]
+        for force, libelle in attendu:
+            self.assertEqual(ep.risque_jour(force), libelle, force)
+
+    def test_memes_mots_que_l_ancien_modele(self):
+        """Le tableau colore selon ces mots : « lev » en rouge, « odér » en orange."""
+        mots = {ep.risque_jour(f) for f in (0, 10, 60, 150, 300)}
+        self.assertEqual(mots, {"Nul", "Faible", "Modéré", "Élevé", "Très élevé"})
+
+
+class TestBlocCommune(Base):
+    def setUp(self):
+        super().setUp()
+        self.orig, self.orig_s = ep.calculer, ep.synthese_mildiou
+        ep.calculer = lambda lat, lon, now=None, get=None: (faux_resultat(), {"profil": "p", "meteo_perimee": False})
+        ep.synthese_mildiou = lambda res, now=None, **k: self.orig_s(res, now=NOW, **k)
+
+    def tearDown(self):
+        ep.calculer, ep.synthese_mildiou = self.orig, self.orig_s
+        super().tearDown()
+
+    def test_bloc_complet(self):
+        b = ep.bloc_commune_pour_client({"commune": "BRIMONT", "latitude": 49.336, "longitude": 4.023}, now=NOW)
+        self.assertEqual(b["titre"], "Situation sur votre commune (Brimont), d'après la météo : ")
+        self.assertIn("autour du 07/10", b["texte"])
+        self.assertEqual((b["tendance"], b["source_position"]), ("PRESSION EN HAUSSE", "client"))
+
+    def test_risque_de_chaque_jour_pour_le_tableau(self):
+        res = faux_resultat()
+        for jour in res["jours"]:
+            jour["force_infection_dh"], jour["force_secondaire_dh"] = {5: (0, 0), 6: (30, 10), 7: (60, 0), 8: (80, 40), 9: (150, 100)}.get(
+                int(jour["date"][-2:]), (0, 0))
+        ep.calculer = lambda lat, lon, now=None, get=None: (res, {"profil": "p", "meteo_perimee": False})
+        b = ep.bloc_commune_pour_client({"commune": "BRIMONT", "latitude": 49.336, "longitude": 4.023}, now=NOW)
+        rj = b["risque_jours"]
+        self.assertEqual([rj[f"2026-10-{d:02d}"] for d in (5, 6, 7, 8, 9)], ["Nul", "Faible", "Modéré", "Élevé", "Très élevé"])
+        self.assertEqual(sorted(rj), [f"2026-10-{d:02d}" for d in range(5, 13)])         # aujourd'hui et les 7 jours suivants
+
+    def test_client_non_localisable_garde_son_bulletin_inchange(self):
+        self.assertIsNone(ep.bloc_commune_pour_client({"commune": "", "latitude": None}, now=NOW, get_json=lambda u: {}))
+
+    def test_ne_leve_jamais(self):
+        def panne(*a, **k):
+            raise ep.MoteurIndisponible("absent")
+        ep.calculer = panne
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertIsNone(ep.bloc_commune_pour_client({"commune": "X", "latitude": 49.3, "longitude": 4.0}, now=NOW))
+
+
+class TestApercuCommunes(Base):
+    def setUp(self):
+        super().setUp()
+        self.orig, self.orig_s = ep.calculer, ep.synthese_mildiou
+        self.appels = []
+
+        def faux_calculer(lat, lon, now=None, get=None):
+            self.appels.append((lat, lon))
+            return faux_resultat(), {"profil": "p", "meteo_perimee": False, "unites_open_meteo": 20.43}
+        ep.calculer = faux_calculer
+        ep.synthese_mildiou = lambda res, now=None, **k: self.orig_s(res, now=NOW, **k)
+        self.clients = [{"id": "A", "commune": "TOUR SUR MARNE", "latitude": 49.049, "longitude": 4.117},
+                        {"id": "B", "commune": "Tour-sur-Marne", "latitude": 49.049, "longitude": 4.117},
+                        {"id": "C", "commune": "BRIMONT", "latitude": 49.336, "longitude": 4.023},
+                        {"id": "D", "commune": "", "latitude": None, "longitude": None}]
+
+    def tearDown(self):
+        ep.calculer, ep.synthese_mildiou = self.orig, self.orig_s
+        super().tearDown()
+
+    def test_une_ligne_par_position_et_clients_regroupes(self):
+        r = ep.apercu_communes(self.clients, now=NOW, get_json=lambda u: {})
+        self.assertEqual((r["clients"], len(r["positions"])), (4, 2))
+        tour = next(p for p in r["positions"] if p["position"] == "49.05_4.12")
+        self.assertEqual((tour["clients"], tour["communes"]), (2, ["TOUR SUR MARNE"]))        # orthographes fusionnées
+        self.assertEqual(len(self.appels), 2)                                                 # un calcul par position, pas par client
+        self.assertEqual((tour["calcule"], tour["tendance"]), (True, "PRESSION EN HAUSSE"))
+        self.assertEqual(tour["prochaine_infection"], {"date": "2026-10-07", "niveau": "très forte", "force_dh": 210.0})
+        self.assertEqual(r["unites_open_meteo"], 40.86)
+
+    def test_clients_sans_position_signales_avec_la_marche_a_suivre(self):
+        r = ep.apercu_communes(self.clients, now=NOW, get_json=lambda u: {})
+        self.assertEqual(r["non_resolus"][0]["id_client"], "D")
+        self.assertIn("renseigne latitude et longitude", r["non_resolus"][0]["raison"])
+
+    def test_budget_de_temps(self):
+        r = ep.apercu_communes(self.clients, now=NOW, get_json=lambda u: {}, budget_s=-1)
+        self.assertTrue(all(not p["calcule"] and "délai" in p["raison"] for p in r["positions"]))
+        self.assertEqual(self.appels, [])
+
+    def test_une_position_en_erreur_n_empeche_pas_les_autres(self):
+        precedent = ep.calculer
+
+        def un_peu_casse(lat, lon, now=None, get=None):
+            if lat > 49.3:
+                raise ep.MoteurIndisponible("pas de météo pour ce point")
+            return precedent(lat, lon, now, get)
+        ep.calculer = un_peu_casse
+        r = ep.apercu_communes(self.clients, now=NOW, get_json=lambda u: {})
+        etats = {p["communes"][0]: p["calcule"] for p in r["positions"]}
+        self.assertEqual(etats, {"BRIMONT": False, "TOUR SUR MARNE": True})
+        self.assertIn("pas de météo", next(p for p in r["positions"] if not p["calcule"])["raison"])
+
+    def test_lire_clients_ne_lit_que_le_necessaire(self):
+        db = os.path.join(self.donnees, "pilot.db")
+        c = sqlite3.connect(db)
+        c.execute("CREATE TABLE clients (id TEXT, exploitation TEXT, commune TEXT, email TEXT, telephone TEXT, latitude REAL, longitude REAL)")
+        c.execute("INSERT INTO clients VALUES ('A','EARL Secrète','BRIMONT','a@b.fr','0600000000',49.3,4.0)")
+        c.commit()
+        c.close()
+        r = ep.lire_clients(db)
+        self.assertEqual(r, [{"id": "A", "commune": "BRIMONT", "latitude": 49.3, "longitude": 4.0}])   # ni nom, ni e-mail, ni téléphone
+
+
+class TestDisjoncteur(Base):
+    def test_apres_une_panne_on_n_insiste_pas_pendant_deux_minutes(self):
+        ep.serie_horaire(49.25, 3.96, NOW, self.faux)                                   # remplit l'historique
+        compteur = []
+
+        def panne(url):
+            compteur.append(url)
+            raise RuntimeError("Open-Meteo injoignable")
+        _, i1 = ep.serie_horaire(49.25, 3.96, NOW + timedelta(hours=2), panne)
+        _, i2 = ep.serie_horaire(49.25, 3.96, NOW + timedelta(hours=3), panne)
+        self.assertEqual(len(compteur), 1)                                              # la 2e demande n'a pas rappelé l'API
+        self.assertTrue(i1["meteo_perimee"] and i2["meteo_perimee"])
+        self.assertIn("en pause", i2["erreur_meteo"])
+        ep._PANNE_JUSQU = 0.0
+        _, i3 = ep.serie_horaire(49.25, 3.96, NOW + timedelta(hours=4), self.faux)
+        self.assertFalse(i3["meteo_perimee"])                                           # la reprise est automatique
+
+
+class TestRoutesCommunes(Base):
+    def setUp(self):
+        super().setUp()
+        try:
+            from flask import Flask
+        except ImportError:
+            self.skipTest("Flask absent")
+        app = Flask(__name__)
+        app.register_blueprint(ep.bp_epidemio)
+        self.client = app.test_client()
+        self.orig = (ep.lire_clients, ep.apercu_communes)
+
+    def tearDown(self):
+        ep.lire_clients, ep.apercu_communes = self.orig
+        super().tearDown()
+
+    def test_route_communes(self):
+        ep.lire_clients = lambda: [{"id": "A", "commune": "BRIMONT"}]
+        vu = {}
+        ep.apercu_communes = lambda clients, budget_s=None, **k: (vu.update(budget=budget_s, clients=clients) or {"positions": [], "non_resolus": [], "clients": 1})
+        r = self.client.get("/api/epidemio-moteur/communes")
+        self.assertEqual((r.status_code, r.get_json()["clients"]), (200, 1))
+        self.assertEqual(vu["budget"], 80)                                              # le délai du serveur est protégé
+
+    def test_route_communes_moteur_indisponible(self):
+        def panne():
+            raise ep.MoteurIndisponible("absent")
+        ep.lire_clients = panne
+        self.assertEqual(self.client.get("/api/epidemio-moteur/communes").status_code, 503)
+
+
+class TestLigneDeCommande(Base):
+    def test_communes(self):
+        orig, orig_s, orig_l = ep.calculer, ep.synthese_mildiou, ep.lire_clients
+        try:
+            ep.calculer = lambda lat, lon, now=None, get=None: (faux_resultat(), {"profil": "p", "unites_open_meteo": 1.07})
+            ep.synthese_mildiou = lambda res, now=None, **k: orig_s(res, now=NOW, **k)
+            ep.lire_clients = lambda db=None: [{"id": "A", "commune": "BRIMONT", "latitude": 49.336, "longitude": 4.023},
+                                               {"id": "B", "commune": "", "latitude": None, "longitude": None}]
+            s = io.StringIO()
+            with contextlib.redirect_stdout(s):
+                code = ep.main(["communes"])
+        finally:
+            ep.calculer, ep.synthese_mildiou, ep.lire_clients = orig, orig_s, orig_l
+        sortie = s.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("2 clients, 1 positions, 1.07 unité(s)", sortie)
+        self.assertIn("BRIMONT", sortie)
+        self.assertIn("PRESSION EN HAUSSE", sortie)
+        self.assertIn("SANS POSITION : client B", sortie)
+
+
+def silencieux(fonction, *args):
+    """Exécute fonction en masquant ses messages (le script de branchement parle beaucoup)."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        return fonction(*args)
+
+
+STUB_SERVEUR = """import json
 from flask import Flask
 app = Flask(__name__)
+# from generer_bulletins_v4 import build_bulletin as _build_bulletin
+
+def _build_bulletin(client, av, prescriptions, suivi, meteo):
+    return ("BULLETIN", client)
 
 def _calculer_synthese_epidemio(lat, lon, m, r):
     return [], {"texte_mildiou": "ANCIEN-MILDIOU", "texte_oidium": "OIDIUM-ANCIEN"}
@@ -312,97 +810,367 @@ def generer_texte_bulletin():
     try:
         meteo_7j, synthese = _calculer_synthese_epidemio(lat, lon, maturite, receptive)
 
-        prompt = f"""Voici la météo.
+        prompt = f'''Voici la météo.
 
 SYNTHÈSE DU MODÈLE ÉPIDÉMIOLOGIQUE :
 {json.dumps(synthese, ensure_ascii=False, indent=2)}
 
-Rédige."""
+Rédige, à partir de CES données précises (pas de généralités), un texte court pour chacun des 5 champs suivants, dans le style suivant : phrases courtes, techniques, factuelles, sans emphase ni formules commerciales. Le risque explique.'''
         return prompt
     except Exception as e:
         return str(e)
-'''
+"""
+
+STUB_GENERATEUR = """BK, OR, GD, GR, BL, OBG, GBG, GM = "000000", "AA6600", "113322", "666666", "0000FF", "OBG", "GBG", "GM"
 
 
-def silencieux(fonction, *args):
-    """Exécute fonction en masquant ses messages (le script de branchement parle beaucoup)."""
-    with contextlib.redirect_stdout(io.StringIO()):
-        return fonction(*args)
+class WD_ALIGN_PARAGRAPH:
+    LEFT, JUSTIFY = "left", "justify"
 
 
-class TestBrancher(unittest.TestCase):
-    def test_modification_compile_et_est_idempotente(self):
-        nouveau = br.modifier(STUB)
+def multi_para(doc, runs):
+    doc.append(("multi", runs))
+
+
+def styled_para(doc, text, bold=False, color=BK, size=10, align=WD_ALIGN_PARAGRAPH.JUSTIFY, sa=4, sb=2, italic=False):
+    doc.append(("para", text, bold, color, align))
+
+
+def section_heading(doc, num, text, color=GD):
+    doc.append(("heading", num, text))
+
+
+def alert_box(doc, title, text, bg=None, tc=None):
+    doc.append(("alert", title, text))
+
+
+def build_bulletin(client, av, prescriptions, suivi, meteo_days):
+    doc = []
+    risque = av.get("risque_mildiou") or ""
+    risque_o = av.get("risque_oidium") or "information non disponible"
+    reco = av.get("reco_mildiou") or ""
+    reco_o = av.get("reco_oidium") or ""
+    multi_para(doc, [
+        {"t": "Analyse du risque : ", "b": True, "c": OR}, f"{risque} ",
+    ])
+    if reco:
+        multi_para(doc, [{"t": "Recommandation Comité Champagne : ", "b": True, "c": GR, "i": True}, f"{reco}"])
+    if suivi:
+        pluie, temp, txt = suivi["pluie"], suivi["temp"], "faits. "
+        if pluie >= 2 and temp >= 11:
+            txt += "CONCLUSION-CRUE"
+        elif pluie < 2:
+            txt += "PAS-DE-PLUIE"
+        else:
+            txt += "TEMP-INSUFFISANTE"
+        multi_para(doc, [{"t": "Situation parcellaire : ", "b": True, "c": GD}, txt])
+
+    if client.get("parcelles_mildiou"):
+        styled_para(doc, "Parcelles sensibles", size=9)
+    multi_para(doc, [
+        {"t": "Analyse régionale : ", "b": True}, f"{risque_o}. ",
+    ])
+    if reco_o:
+        multi_para(doc, [{"t": "Recommandation Comité Champagne : ", "b": True, "c": GR, "i": True}, reco_o])
+    section_heading(doc, "4", "PRÉVISIONS MÉTÉO — 7 JOURS", BL)
+    if meteo_days:
+        risk_days = [d for d in meteo_days if d["risk"] in ("Modéré","Élevé","Très élevé")]
+        if risk_days:
+            alert_box(doc, f"⚠️ {len(risk_days)} jour(s) à risque de contamination", ", ".join(d["date"] for d in risk_days), OBG, OR)
+        else:
+            alert_box(doc, "✅ Pas de risque mildiou sur 7 jours",
+                "Aucun jour ne réunit pluie ≥ 2 mm + T° moy ≥ 11°C.", GBG, GM)
+        for day in meteo_days[:7]:
+            multi_para(doc, [f"LIGNE {day['date']} {day['risk']}"])
+    return doc
+"""
+
+STUB_DASHBOARD = ("zone.innerHTML=`<strong>Mildiou</strong> — ${b.risque_mildiou||'—'}<br>${b.reco_mildiou||''}<br><br>\n"
+                  "<strong>Oïdium</strong> — ${b.risque_oidium||'—'}<br>`;\n"
+                  "h+=`<p>${av.risque_mildiou||'?'}</p>`;h+=`<p>${av.risque_oidium||'?'}</p>`;\n")
+STUB_PORTAIL = ("h+=`<div class=\"alert\"><strong>Mildiou</strong><br>${b.risque_mildiou}</div>`;\n"
+                "h+=`<div class=\"alert\"><strong>Oïdium</strong><br>${b.risque_oidium}</div>`;\n")
+
+
+def executer(src):
+    mod = types.ModuleType("stub")
+    exec(compile(src, "stub", "exec"), mod.__dict__)
+    return mod
+
+
+class TestBrancherServeur(unittest.TestCase):
+    def test_trois_etapes_compilent_et_sont_idempotentes(self):
+        nouveau, etapes = br.modifier_serveur(STUB_SERVEUR)
+        self.assertEqual(etapes, ["moteur", "style", "communes"])
         compile(nouveau, "stub", "exec")
-        self.assertEqual(br.modifier(nouveau), nouveau)                              # 2e passage : inchangé
+        self.assertEqual(br.modifier_serveur(nouveau), (nouveau, []))
         self.assertIn("{bloc_epidemio}", nouveau)
-        self.assertNotIn("{json.dumps(synthese, ensure_ascii=False, indent=2)}", nouveau)
-        self.assertEqual(nouveau.count("epidemio_pilot"), 1)
+        self.assertIn(br.S_STYLE_NOUVEAU, nouveau)
+        self.assertNotIn(br.S_STYLE, nouveau)
+
+    def test_mise_a_niveau_d_un_serveur_branche_avec_la_version_precedente(self):
+        v2 = (STUB_SERVEUR.replace(br.S_ROUTE, br.BLOC_MOTEUR + br.S_ROUTE).replace(br.S_APPEL, br.S_APPEL + br.LIGNES_APPEL)
+              .replace(br.S_PROMPT, "{bloc_epidemio}"))
+        nouveau, etapes = br.modifier_serveur(v2)
+        self.assertEqual(etapes, ["style", "communes"])
+        self.assertEqual(nouveau, br.modifier_serveur(STUB_SERVEUR)[0])                # converge vers un branchement à neuf
 
     def test_point_d_ancrage_manquant_ou_ambigu_refuse(self):
-        for ancre in (br.ANCRE_ROUTE, br.ANCRE_APPEL, br.ANCRE_PROMPT):
+        for ancre in (br.S_ROUTE, br.S_APPEL, br.S_PROMPT, br.S_STYLE):
             with self.assertRaises(ValueError):
-                br.modifier(STUB.replace(ancre, "# retiré\n"))
+                br.modifier_serveur(STUB_SERVEUR.replace(ancre, "# retiré\n"))
             with self.assertRaises(ValueError):
-                br.modifier(STUB + "\n" + ancre)                                      # doublon : ambigu
+                br.modifier_serveur(STUB_SERVEUR + "\n" + ancre)
+        with self.assertRaises(ValueError):
+            br.modifier_serveur(STUB_SERVEUR.replace("build_bulletin as _build_bulletin", "autre"))
 
-    def executer(self, src):
-        mod = types.ModuleType("stub_serveur")
-        exec(compile(src, "stub", "exec"), mod.__dict__)
-        return mod
+    def prompt_et_bulletin(self, calculer):
+        mod = executer(br.modifier_serveur(STUB_SERVEUR)[0])
+        ancien = ep.calculer
+        try:
+            ep.calculer = calculer
+            return mod.generer_texte_bulletin(), mod._build_bulletin({"commune": "BRIMONT", "latitude": 49.3, "longitude": 4.0},
+                                                                     {}, [], None, None)
+        finally:
+            ep.calculer = ancien
 
-    def test_serveur_modifie_utilise_le_moteur_puis_replie(self):
+    def test_serveur_modifie_avec_moteur(self):
         try:
             import flask  # noqa: F401
         except ImportError:
             self.skipTest("Flask absent")
-        mod = self.executer(br.modifier(STUB))
-        ancien = ep.calculer
+        prompt, (nom, client) = self.prompt_et_bulletin(lambda lat, lon, now=None, get=None: (faux_resultat(), {"profil": "p"}))
+        self.assertIn("MILDIOU (nouveau moteur horaire)", prompt)
+        self.assertIn("CONSIGNE DE RÉDACTION (elle remplace", prompt)
+        self.assertIn("en respectant la CONSIGNE DE RÉDACTION ci-dessus", prompt)
+        self.assertNotIn("phrases courtes, techniques", prompt)                        # l'ancien style est parti
+        self.assertNotIn("ANCIEN-MILDIOU", prompt)
+        self.assertIn("OIDIUM-ANCIEN", prompt)
+        self.assertIn("_epidemio_commune", client)                                     # le bulletin reçoit le bloc commune
+        self.assertTrue(client["_epidemio_commune"]["titre"].startswith("Situation sur votre commune (Brimont)"))
+        self.assertEqual(client["commune"], "BRIMONT")                                 # le reste du client est intact
+
+    def test_serveur_modifie_sans_moteur_se_comporte_comme_avant(self):
         try:
-            ep.calculer = lambda lat, lon, now=None, recuperer=None: (faux_resultat(), {"profil": "calage_2026"})
-            avec = mod.generer_texte_bulletin()
-            self.assertIn("MILDIOU (nouveau moteur horaire)", avec)
-            self.assertNotIn("ANCIEN-MILDIOU", avec)
-            self.assertIn("OIDIUM-ANCIEN", avec)
+            import flask  # noqa: F401
+        except ImportError:
+            self.skipTest("Flask absent")
 
-            def panne(*a, **k):
-                raise ep.MoteurIndisponible("absent")
-            ep.calculer = panne
-            sans = mod.generer_texte_bulletin()
-            self.assertIn("ANCIEN-MILDIOU", sans)
-            self.assertNotIn("nouveau moteur horaire", sans)
-        finally:
-            ep.calculer = ancien
+        def panne(*a, **k):
+            raise ep.MoteurIndisponible("absent")
+        with contextlib.redirect_stderr(io.StringIO()):
+            prompt, (nom, client) = self.prompt_et_bulletin(panne)
+        self.assertIn("ANCIEN-MILDIOU", prompt)                                        # ancien contenu
+        self.assertNotIn("nouveau moteur horaire", prompt)
+        self.assertIn("CONSIGNE DE RÉDACTION", prompt)                                 # mais nouvelle forme demandée
+        self.assertEqual(client, {"commune": "BRIMONT", "latitude": 49.3, "longitude": 4.0})   # client strictement inchangé
 
-    def test_ligne_de_commande_branche_sauvegarde_et_retire(self):
-        with tempfile.TemporaryDirectory() as d:
-            chemin = os.path.join(d, "serveur_vitisens.py")
-            with open(chemin, "w", encoding="utf-8", newline="") as f:
-                f.write(STUB)
-            self.assertEqual(silencieux(br.main, [chemin]), 0)
-            self.assertTrue(os.path.exists(chemin + br.SAUVEGARDE))
-            with open(chemin, encoding="utf-8") as f:
-                branche = f.read()
-            self.assertIn("epidemio_pilot", branche)
-            self.assertEqual(silencieux(br.main, [chemin]), 0)                                    # idempotent
-            with open(chemin, encoding="utf-8") as f:
-                self.assertEqual(f.read(), branche)
-            self.assertEqual(silencieux(br.main, [chemin, "--retirer"]), 0)
-            with open(chemin, encoding="utf-8") as f:
-                self.assertEqual(f.read(), STUB)                                      # retour à l'identique
+    def test_un_bloc_commune_defaillant_n_empeche_jamais_le_bulletin(self):
+        mod = executer(br.modifier_serveur(STUB_SERVEUR)[0])
 
-    def test_echec_n_ecrit_rien(self):
-        with tempfile.TemporaryDirectory() as d:
-            chemin = os.path.join(d, "serveur_vitisens.py")
-            autre = "app = None\n# serveur différent de la version attendue\n"
-            with open(chemin, "w", encoding="utf-8") as f:
-                f.write(autre)
-            self.assertEqual(silencieux(br.main, [chemin]), 1)
-            with open(chemin, encoding="utf-8") as f:
-                self.assertEqual(f.read(), autre)
-            self.assertFalse(os.path.exists(chemin + br.SAUVEGARDE))
-            self.assertEqual(silencieux(br.main, [os.path.join(d, "absent.py")]), 1)
-            self.assertEqual(silencieux(br.main, [chemin, "--retirer"]), 1)                       # pas de sauvegarde
+        def casse(client):
+            raise RuntimeError("boum")
+        mod._bloc_commune_pour_client = casse
+        with contextlib.redirect_stdout(io.StringIO()):
+            nom, client = mod._build_bulletin({"commune": "X"}, {}, [], None, None)
+        self.assertEqual((nom, client), ("BULLETIN", {"commune": "X"}))
+
+
+class TestBrancherGenerateur(unittest.TestCase):
+    def setUp(self):
+        self.avant = executer(STUB_GENERATEUR)
+        self.apres = executer(br.modifier_generateur(STUB_GENERATEUR)[0])
+
+    def meteo(self):
+        return [{"date": "2026-10-06", "risk": "Faible"}, {"date": "2026-10-07", "risk": "Élevé"}, {"date": "2026-10-08", "risk": "Modéré"}]
+
+    def commune(self, **risque_jours):
+        return {"_epidemio_commune": {"titre": "Situation : ", "texte": "Bloc.", "risque_jours": risque_jours}}
+
+    def test_les_quatre_etapes_compilent_et_sont_idempotentes(self):
+        nouveau, etapes = br.modifier_generateur(STUB_GENERATEUR)
+        self.assertEqual(etapes, ["paragraphes", "commune", "libellé", "tableau"])
+        self.assertEqual(br.modifier_generateur(nouveau), (nouveau, []))
+
+    def test_mise_a_niveau_d_un_generateur_branche_avec_la_version_precedente(self):
+        v3 = (STUB_GENERATEUR.replace(br.G_DEF, br.G_HELPER + br.G_DEF)
+              .replace(br.G_MILDIOU, '    analyse_en_paragraphes(doc, "Analyse du risque : ", risque, OR)\n')
+              .replace(br.G_OIDIUM, '    analyse_en_paragraphes(doc, "Analyse régionale : ", risque_o, None, ". ")\n')
+              .replace(br.G_CONCLUSION, br.G_CONCLUSION_NOUVELLE).replace(br.G_PARCELLES, br.G_BLOC_COMMUNE + br.G_PARCELLES))
+        nouveau, etapes = br.modifier_generateur(v3)
+        self.assertEqual(etapes, ["libellé", "tableau"])
+        self.assertEqual(nouveau, br.modifier_generateur(STUB_GENERATEUR)[0])           # converge vers un branchement à neuf
+
+    def test_ancrage_manquant_ou_ambigu_refuse(self):
+        for ancre in (br.G_DEF, br.G_MILDIOU, br.G_OIDIUM, br.G_CONCLUSION, br.G_PARCELLES, br.G_SECTION4, br.G_PAS_DE_RISQUE):
+            with self.assertRaises(ValueError):
+                br.modifier_generateur(STUB_GENERATEUR.replace(ancre, "# retiré\n"))
+            with self.assertRaises(ValueError):
+                br.modifier_generateur(STUB_GENERATEUR + "\n" + ancre)
+
+    def test_libelle_attendu_deux_fois(self):
+        with self.assertRaises(ValueError):
+            br.modifier_generateur(STUB_GENERATEUR + "\n# " + br.G_LIBELLE)              # une 3e occurrence : version inattendue
+
+    def test_texte_sans_retour_a_la_ligne_rendu_exactement_comme_avant(self):
+        for av in ({"risque_mildiou": "Infection modérée le 07/10.", "risque_oidium": "Risque modéré"}, {}, {"risque_oidium": ""}):
+            for suivi in (None, {"pluie": 5, "temp": 14}, {"pluie": 0, "temp": 14}, {"pluie": 5, "temp": 8}):
+                for client in ({}, {"parcelles_mildiou": "Les Vignes"}):
+                    for meteo in (None, self.meteo()):
+                        self.assertEqual(self.avant.build_bulletin(client, av, [], suivi, meteo),
+                                         self.apres.build_bulletin(client, av, [], suivi, meteo), (av, suivi, client))
+
+    def test_libelle_recommandation_sans_comite(self):
+        av = {"reco_mildiou": "Rester vigilant.", "reco_oidium": "Surveiller."}
+        avant = self.avant.build_bulletin({}, av, [], None, None)
+        apres = self.apres.build_bulletin({}, av, [], None, None)
+        self.assertIn("Recommandation Comité Champagne : ", str(avant))
+        self.assertNotIn("Comité", str(apres))
+        self.assertEqual(str(apres).count("Recommandation : "), 2)                       # mildiou et oïdium
+        self.assertIn("Rester vigilant.", str(apres))                                     # le texte lui-même est intact
+
+    def test_texte_a_plusieurs_lignes_titre_puis_paragraphes(self):
+        av = {"risque_mildiou": "RISQUE MILDIOU — PRESSION EN HAUSSE\n\nPremier paragraphe.\n\nSecond paragraphe.",
+              "risque_oidium": "RISQUE OÏDIUM — PRESSION FAIBLE\nUn seul paragraphe."}
+        doc = self.apres.build_bulletin({}, av, [], None, None)
+        self.assertEqual(doc[0], ("para", "RISQUE MILDIOU — PRESSION EN HAUSSE", True, "AA6600", "left"))      # titre en gras, coloré
+        self.assertEqual(doc[1][:2], ("para", "Premier paragraphe."))
+        self.assertEqual(doc[2][:2], ("para", "Second paragraphe."))
+        self.assertEqual(doc[3], ("para", "RISQUE OÏDIUM — PRESSION FAIBLE", True, "000000", "left"))
+        self.assertEqual(doc[4][:2], ("para", "Un seul paragraphe."))                                           # pas de « . » ajouté
+
+    def test_sans_titre_tout_est_paragraphe(self):
+        doc = self.apres.build_bulletin({}, {"risque_mildiou": "Une phrase complète qui finit par un point.\nUne autre."}, [], None, None)
+        self.assertEqual([d[1] for d in doc[:2]], ["Une phrase complète qui finit par un point.", "Une autre."])
+        self.assertTrue(all(d[2] is False for d in doc[:2]))
+
+    def test_bloc_commune_remplace_la_conclusion_fruste(self):
+        client = {"_epidemio_commune": {"titre": "Situation sur votre commune (Brimont) : ", "texte": "Texte du moteur."}}
+        doc = self.apres.build_bulletin(client, {"risque_mildiou": "x"}, [], {"pluie": 5, "temp": 14}, None)
+        textes = " ".join(str(d) for d in doc)
+        self.assertNotIn("CONCLUSION-CRUE", textes)                                    # la règle fruste ne conclut plus
+        self.assertIn("faits. ", textes)                                               # mais les faits de l'exploitation restent
+        self.assertIn("Texte du moteur.", textes)
+        self.assertLess(textes.index("Situation parcellaire"), textes.index("Texte du moteur."))
+
+    def test_bloc_commune_avant_les_parcelles_sensibles(self):
+        client = {"parcelles_mildiou": "Les Vignes", "_epidemio_commune": {"titre": "T : ", "texte": "Bloc."}}
+        doc = self.apres.build_bulletin(client, {}, [], None, None)
+        textes = [str(d) for d in doc]
+        i_bloc = next(i for i, d in enumerate(textes) if "Bloc." in d)
+        i_parc = next(i for i, d in enumerate(textes) if "Parcelles sensibles" in d)
+        self.assertLess(i_bloc, i_parc)
+
+    def test_sans_bloc_commune_la_conclusion_ancienne_est_conservee(self):
+        doc = self.apres.build_bulletin({}, {}, [], {"pluie": 5, "temp": 14}, None)
+        self.assertIn("CONCLUSION-CRUE", " ".join(str(d) for d in doc))
+
+    def test_le_tableau_prend_le_risque_du_moteur_date_par_date(self):
+        client = self.commune(**{"2026-10-06": "Très élevé", "2026-10-07": "Nul"})
+        doc = self.apres.build_bulletin(client, {}, [], None, self.meteo())
+        lignes = [d[1][0] for d in doc if d[0] == "multi" and str(d[1][0]).startswith("LIGNE")]
+        self.assertEqual(lignes, ["LIGNE 2026-10-06 Très élevé", "LIGNE 2026-10-07 Nul",
+                                  "LIGNE 2026-10-08 Modéré"])                          # date inconnue du moteur : ancien libellé
+        alerte = next(d for d in doc if d[0] == "alert")
+        self.assertIn("2 jour(s)", alerte[1])                                           # le résumé suit les nouveaux libellés
+        self.assertIn("2026-10-06", alerte[2])
+        self.assertNotIn("2026-10-07", alerte[2])                                       # l'ancien « Élevé » du 07 est corrigé en « Nul »
+
+    def test_phrase_pas_de_risque_selon_la_source(self):
+        faible = self.commune(**{"2026-10-06": "Nul", "2026-10-07": "Faible", "2026-10-08": "Nul"})
+        meteo = self.meteo()
+        doc = self.apres.build_bulletin(faible, {}, [], None, meteo)
+        alerte = next(d for d in doc if d[0] == "alert")
+        self.assertEqual(alerte[1], "✅ Pas de risque mildiou sur 7 jours")
+        self.assertEqual(alerte[2], "Aucune infection significative n'est attendue sur votre commune d'après la météo.")
+        calme = [{"date": "2026-10-06", "risk": "Faible"}]                              # sans moteur : ancienne phrase
+        doc = self.apres.build_bulletin({}, {}, [], None, calme)
+        self.assertIn("pluie ≥ 2 mm", next(d for d in doc if d[0] == "alert")[2])
+
+    def test_la_meteo_partagee_entre_clients_n_est_pas_modifiee(self):
+        meteo = self.meteo()
+        copie = [dict(d) for d in meteo]
+        self.apres.build_bulletin(self.commune(**{"2026-10-06": "Très élevé"}), {}, [], None, meteo)
+        self.assertEqual(meteo, copie)                                                   # le client suivant voit la météo d'origine
+
+    def test_bloc_commune_sans_risque_jours_laisse_le_tableau_comme_avant(self):
+        client = {"_epidemio_commune": {"titre": "T : ", "texte": "Bloc."}}
+        doc = self.apres.build_bulletin(client, {}, [], None, self.meteo())
+        lignes = [d[1][0] for d in doc if d[0] == "multi" and str(d[1][0]).startswith("LIGNE")]
+        self.assertEqual(lignes, ["LIGNE 2026-10-06 Faible", "LIGNE 2026-10-07 Élevé", "LIGNE 2026-10-08 Modéré"])
+
+
+class TestBrancherHtml(unittest.TestCase):
+    def test_dashboard_et_portail(self):
+        d, e = br.modifier_dashboard(STUB_DASHBOARD)
+        self.assertEqual(e, ["retours à la ligne"])
+        self.assertEqual(d.count(".replace(/\\n/g,'<br>')"), 4)
+        self.assertIn("${(b.risque_mildiou||'—').replace(/\\n/g,'<br>')}", d)
+        self.assertEqual(br.modifier_dashboard(d), (d, []))
+        p, e = br.modifier_portail(STUB_PORTAIL)
+        self.assertEqual(p.count(".replace(/\\n/g,'<br>')"), 2)
+        self.assertIn("<br>${(b.risque_oidium||'').replace(/\\n/g,'<br>')}</div>", p)
+        self.assertEqual(br.modifier_portail(p), (p, []))
+
+    def test_ancrage_manquant_refuse(self):
+        with self.assertRaises(ValueError):
+            br.modifier_dashboard(STUB_DASHBOARD.replace("${av.risque_mildiou||'?'}", "AUTRE"))
+        with self.assertRaises(ValueError):
+            br.modifier_portail(STUB_PORTAIL + STUB_PORTAIL)                            # ancres en double : ambigu
+
+
+class TestBrancherLigneDeCommande(unittest.TestCase):
+    def dossier(self, **remplacements):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        fichiers = {"serveur_vitisens.py": STUB_SERVEUR, "generer_bulletins_v4.py": STUB_GENERATEUR,
+                    "dashboard_v2.html": STUB_DASHBOARD, "portail_client.html": STUB_PORTAIL}
+        fichiers.update(remplacements)
+        for nom, contenu in fichiers.items():
+            if contenu is not None:
+                with open(os.path.join(d, nom), "w", encoding="utf-8", newline="") as f:
+                    f.write(contenu)
+        return d
+
+    def lire(self, d, nom):
+        with open(os.path.join(d, nom), encoding="utf-8", newline="") as f:
+            return f.read()
+
+    def test_branche_les_quatre_fichiers_puis_retire(self):
+        d = self.dossier()
+        self.assertEqual(silencieux(br.main, [d]), 0)
+        for nom in ("serveur_vitisens.py", "generer_bulletins_v4.py", "dashboard_v2.html", "portail_client.html"):
+            self.assertTrue(os.path.exists(os.path.join(d, nom + br.SAUVEGARDE)), nom)
+        branche = {n: self.lire(d, n) for n in os.listdir(d) if not n.endswith(br.SAUVEGARDE)}
+        self.assertEqual(silencieux(br.main, [d]), 0)                                  # idempotent
+        self.assertEqual({n: self.lire(d, n) for n in branche}, branche)
+        self.assertEqual(silencieux(br.main, [d, "--retirer"]), 0)
+        self.assertEqual(self.lire(d, "serveur_vitisens.py"), STUB_SERVEUR)            # retour à l'identique
+        self.assertEqual(self.lire(d, "generer_bulletins_v4.py"), STUB_GENERATEUR)
+
+    def test_un_fichier_different_est_refuse_sans_bloquer_les_autres(self):
+        d = self.dossier(**{"dashboard_v2.html": "<html>autre version</html>"})
+        self.assertEqual(silencieux(br.main, [d]), 1)
+        self.assertEqual(self.lire(d, "dashboard_v2.html"), "<html>autre version</html>")           # intact
+        self.assertFalse(os.path.exists(os.path.join(d, "dashboard_v2.html" + br.SAUVEGARDE)))     # et sans sauvegarde
+        self.assertIn("epidemio_pilot", self.lire(d, "serveur_vitisens.py"))                       # les autres sont traités
+        self.assertIn("analyse_en_paragraphes", self.lire(d, "generer_bulletins_v4.py"))
+
+    def test_fichiers_absents_ignores_serveur_obligatoire(self):
+        d = self.dossier(**{"dashboard_v2.html": None, "portail_client.html": None})
+        self.assertEqual(silencieux(br.main, [d]), 0)
+        d2 = self.dossier(**{"serveur_vitisens.py": None})
+        self.assertEqual(silencieux(br.main, [d2]), 1)
+
+    def test_accepte_aussi_le_chemin_du_serveur(self):
+        d = self.dossier()
+        self.assertEqual(silencieux(br.main, [os.path.join(d, "serveur_vitisens.py")]), 0)
+        self.assertIn("epidemio_pilot", self.lire(d, "serveur_vitisens.py"))
+
+    def test_retirer_sans_sauvegarde_ne_fait_rien(self):
+        d = self.dossier()
+        self.assertEqual(silencieux(br.main, [d, "--retirer"]), 0)
+        self.assertEqual(self.lire(d, "serveur_vitisens.py"), STUB_SERVEUR)
 
 
 if __name__ == "__main__":
