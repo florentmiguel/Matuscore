@@ -17,6 +17,10 @@ Cette version **met à niveau** une installation déjà branchée et fonctionne 
    sous le tableau (« N jour(s) à risque de contamination » ou « Pas de risque mildiou sur 7 jours ») suit ces libellés ; sa phrase
    « pluie ≥ 2 mm + T° ≥ 11 °C » est remplacée par « Aucune infection significative n'est attendue sur votre commune d'après la météo ».
 5. **Libellé** : « Recommandation » (et non plus « Recommandation Comité Champagne ») au-dessus de tes recommandations mildiou et oïdium.
+6. **EPI** : si la génération de texte ne renvoie pas d'EPI (serveur à 4 champs, ou IA qui l'oublie), le moteur le calcule : une courte phrase sans
+   point final, par exemple « modéré et en hausse, avec une infection attendue autour du 07/10 ». Un EPI écrit par l'IA est respecté.
+7. **Cache du navigateur** : `sw.js` passe en version 2. Le portail et le tableau de bord sont servis « cache d'abord » : sans cela, un navigateur
+   qui a déjà visité ces pages continue d'afficher l'ancienne version, même après la mise à jour du serveur.
 
 **Garantie** : sans retour à la ligne dans les textes, et si le moteur est absent ou en panne, un bulletin est rendu comme avant, paragraphes
 et tableaux compris (vérifié sur une copie de ta base) ; seul le libellé « Recommandation » change. Le tableau retombe alors sur l'ancien
@@ -47,6 +51,16 @@ modèle, jour par jour.
 * Navigateur, connecté en admin : `/api/epidemio-moteur/communes` (même contenu), `/api/epidemio-moteur/etat` (appels consommés).
 * Génère un bulletin client et regarde le paragraphe « Situation sur votre commune ».
 * Tests : `cd ~/Matuscore && EPIDEMIO_PATH=~/epidemio venv/bin/python3 test_epidemio_pilot.py`.
+
+## « Je ne vois rien de nouveau dans le portail ou dans le PDF du portail »
+Ce que voit un client ne vient pas de l'onglet admin tant que tu n'as pas fait ces deux gestes :
+1. **Sauvegarder** le bulletin (bouton de l'onglet bulletin). Le portail affiche le dernier bulletin *enregistré* : un texte généré mais non
+   sauvegardé n'existe que dans le formulaire.
+2. **📁 Générer et stocker les bulletins** (choisis un client, ou aucun pour tous). **Les PDF du portail sont des fichiers stockés** : ils
+   gardent le contenu de la dernière fois et ne se mettent pas à jour tout seuls.
+Pour tester sans attendre, ouvre le PDF d'un client depuis l'admin (il est généré à la demande) : tu dois y voir « Recommandation : », le
+paragraphe « Situation sur votre commune » et le tableau de prévisions piloté par le moteur. Côté navigateur, recharge la page du portail une
+fois (ou deux) après la mise à jour.
 
 ## Dépannage
 * **« No module named 'historique_meteo' »** : le dépôt `epidemio` du VPS n'a pas le nouveau fichier. Pousse la nouvelle version depuis le PC

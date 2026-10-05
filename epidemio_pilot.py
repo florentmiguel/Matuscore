@@ -351,7 +351,8 @@ def consigne_redaction(titres: dict) -> str:
         "ni jargon inutile. Garde les chiffres utiles (dates au format JJ/MM, millimètres de pluie, pourcentage d'humectation, et "
         "l'intensité en °C·h pour la seule infection principale) sans les multiplier. N'écris jamais « modèle », « moteur » ni « données ».\n"
         "Les champs « reco_mildiou » et « reco_oidium » : 2 à 3 phrases concrètes et proportionnées au risque, sans titre.\n"
-        "Si le champ « epi » est demandé, il reste une seule courte phrase, sans point final.\n"
+        "Si le champ « epi » (potentiel épidémique du mildiou) est demandé, c'est UNE seule courte phrase d'une quinzaine de mots, qui qualifie "
+        "le niveau de potentiel infectieux de la semaine et sa raison principale, sans point final (le bulletin ajoute le sien).\n"
         "Dans le JSON, les retours à la ligne s'écrivent \\n."
     )
 
@@ -508,6 +509,55 @@ def phrase_commune(syn: dict, now: datetime | None = None) -> str:
                     "PRESSION STABLE": "La pression reste stable.",
                     "PRESSION FAIBLE": "La pression reste faible à ce stade."}[syn["tendance"]["libelle"]])
     return " ".join(phrases)
+
+
+NIVEAU_EPI = {"faible": "faible", "modérée": "modéré", "forte": "fort", "très forte": "très fort"}
+TENDANCE_EPI = {"PRESSION EN HAUSSE": "en hausse", "PRESSION EN BAISSE": "en baisse", "PRESSION STABLE": "stable", "PRESSION FAIBLE": None}
+
+
+def epi_depuis_synthese(syn: dict, now: datetime | None = None) -> str:
+    """Potentiel épidémique (EPI) du bulletin : une courte phrase SANS point final (le bulletin ajoute le sien), entièrement déterministe,
+    tirée des mêmes événements que le reste de l'analyse. Exemples : « modéré et en hausse, avec une infection attendue autour du 07/10 »,
+    « faible, aucune infection significative attendue dans les 7 prochains jours »."""
+    now = now or datetime.now(UTC)
+    aujourd = now.strftime("%Y-%m-%d")
+    semaine = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    evts = syn["infections_primaires"]["evenements"] + syn["infections_secondaires"]["evenements"]
+    prevus = [e for e in evts if e["date"] >= aujourd]
+    recents = [e for e in evts if semaine <= e["date"] < aujourd]
+    tendance = TENDANCE_EPI[syn["tendance"]["libelle"]]
+
+    def jj(e):
+        return f"{e['date'][8:10]}/{e['date'][5:7]}"
+    if prevus:
+        e = max(prevus, key=lambda x: x.get("force_dh") or 0)
+        return f"{NIVEAU_EPI[e['niveau']]}{' et ' + tendance if tendance else ''}, avec une infection attendue autour du {jj(e)}"
+    if recents:
+        e = max(recents, key=lambda x: x.get("force_dh") or 0)
+        return f"{NIVEAU_EPI[e['niveau']]}, infection récente le {jj(e)}{' et pression ' + tendance if tendance else ''}"
+    return "faible, aucune infection significative attendue dans les 7 prochains jours"
+
+
+def epi_pour_requete(lat, lon, now: datetime | None = None, get=None) -> str | None:
+    """EPI calculé par le moteur pour une position (la position par défaut si elle n'est pas fournie), ou None si le moteur ne peut pas
+    répondre. NE LÈVE JAMAIS."""
+    try:
+        lat = COORDS_DEFAUT["lat"] if lat in (None, "") else lat
+        lon = COORDS_DEFAUT["lon"] if lon in (None, "") else lon
+        res, meta = calculer(lat, lon, now=now, get=get)
+        return epi_depuis_synthese(synthese_mildiou(res, now=now, meta=meta), now)
+    except Exception as e:                                          # noqa: BLE001
+        print(f"[epidemio] EPI non calculé : {e}", file=sys.stderr)
+        return None
+
+
+def epi_si_absent(donnees, lat, lon, now: datetime | None = None, get=None) -> dict | None:
+    """Pour la réponse de /api/generer-texte-bulletin : si elle n'a pas d'« epi » (serveur à 4 champs, ou IA qui l'oublie), renvoie la
+    réponse complétée par l'EPI du moteur ; sinon None (rien à changer). Les autres champs ne sont jamais touchés."""
+    if not isinstance(donnees, dict) or (donnees.get("epi") or "").strip():
+        return None
+    epi = epi_pour_requete(lat, lon, now=now, get=get)
+    return {**donnees, "epi": epi} if epi else None
 
 
 def risque_jour(force_dh: float) -> str:

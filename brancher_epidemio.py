@@ -13,13 +13,15 @@ portail_client.html), une fois epidemio_pilot.py copié à côté :
 Ce que le script modifie, fichier par fichier :
   serveur_vitisens.py     1. « moteur » : route /api/epidemio-moteur et mildiou du prompt de l'IA tiré du moteur ;
                           2. « style »  : la forme des analyses est dictée par epidemio_pilot.py (titre, paragraphes) ;
-                          3. « communes » : chaque bulletin client reçoit un bloc « situation sur votre commune ».
+                          3. « communes » : chaque bulletin client reçoit un bloc « situation sur votre commune » ;
+                          4. « epi » : si la génération de texte ne renvoie pas d'EPI, le moteur le fournit.
   generer_bulletins_v4.py  rend l'analyse en titre + paragraphes (si elle contient des retours à la ligne), ajoute le bloc
                           commune, nomme la recommandation « Recommandation » (et non plus « Recommandation Comité Champagne »)
                           et tire du moteur le risque du tableau « Prévisions météo ». Sans retour à la ligne ni moteur,
                           le rendu historique est strictement conservé (hors libellé).
   dashboard_v2.html       aperçus du bulletin : les retours à la ligne des analyses sont respectés.
   portail_client.html     idem pour le portail du vigneron.
+  sw.js                   renouvelle le cache du navigateur, pour que les pages modifiées s'affichent chez ceux qui les ont déjà visitées.
 
 Garanties :
   * chaque fichier est TOUT OU RIEN : si un point d'ancrage manque ou est ambigu (fichier différent de la version attendue),
@@ -56,6 +58,7 @@ S_STYLE_SEUL_NOUVEAU = "en respectant la CONSIGNE DE RÉDACTION ci-dessus."
 MARQUEUR_MOTEUR = "from epidemio_pilot import bp_epidemio"
 MARQUEUR_STYLE = "CONSIGNE DE RÉDACTION ci-dessus"
 MARQUEUR_COMMUNES = "_build_bulletin_sans_commune"
+MARQUEUR_EPI = "_epidemio_completer_epi"
 
 BLOC_MOTEUR = '''# --- Moteur épidémiologique mildiou (dépôt epidemio) : facultatif, Pilot démarre sans lui ---
 try:
@@ -94,6 +97,30 @@ def _build_bulletin(client, av, prescriptions, suivi, meteo):
     if bloc:
         client = {**client, "_epidemio_commune": bloc}
     return _build_bulletin_sans_commune(client, av, prescriptions, suivi, meteo)
+
+'''
+
+
+BLOC_EPI = '''# --- EPI du bulletin : si la génération de texte n'en renvoie pas (serveur à 4 champs, ou IA qui l'oublie), le moteur le fournit ---
+try:
+    from epidemio_pilot import epi_si_absent as _epidemio_epi_si_absent
+except Exception as _e_epidemio_epi:
+    _epidemio_epi_si_absent = None
+
+
+@app.after_request
+def _epidemio_completer_epi(resp):
+    try:
+        if (_epidemio_epi_si_absent and request.path == '/api/generer-texte-bulletin'
+                and resp.status_code == 200 and resp.is_json):
+            _coords = globals().get('COORDS') or {}
+            complet = _epidemio_epi_si_absent(resp.get_json(), request.args.get('lat', _coords.get('lat')),
+                                              request.args.get('lon', _coords.get('lon')))
+            if complet:
+                resp.set_data(json.dumps(complet, ensure_ascii=False))
+    except Exception as _e:
+        print(f"[epidemio] EPI non ajouté : {_e}")
+    return resp
 
 '''
 
@@ -139,6 +166,10 @@ def modifier_serveur(src: str) -> tuple[str, list[str]]:
         _une_fois(src, "build_bulletin as _build_bulletin", "import de build_bulletin")
         src = src.replace(S_ROUTE, BLOC_COMMUNES + S_ROUTE, 1)
         etapes.append("communes")
+    if MARQUEUR_EPI not in src:
+        _une_fois(src, S_ROUTE, "route /api/generer-texte-bulletin")
+        src = src.replace(S_ROUTE, BLOC_EPI + S_ROUTE, 1)
+        etapes.append("epi")
     if etapes:
         compile(src, "serveur_vitisens.py", "exec")
     return src, etapes
@@ -248,8 +279,19 @@ def _modifier_html(src: str, remplacements) -> tuple[str, list[str]]:
     return src, ["retours à la ligne"]
 
 
+D_EPI_PRESENT = "getElementById('bh_ep').value=d.epi"
+D_EPI_ANCRE = "\n  document.getElementById('bh_rm').value=d.risque_mildiou||'';\n"          # début de ligne : indentation exacte attendue
+D_EPI_LIGNE = "\n  document.getElementById('bh_ep').value=d.epi||'';\n"
+
+
 def modifier_dashboard(src: str) -> tuple[str, list[str]]:
-    return _modifier_html(src, H_DASHBOARD)
+    """Retours à la ligne des aperçus ; et, si le formulaire a un champ EPI que la génération de texte ne remplit pas, la ligne qui le
+    remplit (sans effet si elle existe déjà, ou si l'ancre est introuvable : ce n'est pas une raison de refuser le fichier)."""
+    src, etapes = _modifier_html(src, H_DASHBOARD)
+    if D_EPI_PRESENT not in src and 'id="bh_ep"' in src and src.count(D_EPI_ANCRE) == 1:
+        src = src.replace(D_EPI_ANCRE, D_EPI_LIGNE + D_EPI_ANCRE[1:], 1)
+        etapes.append("champ EPI")
+    return src, etapes
 
 
 def modifier_portail(src: str) -> tuple[str, list[str]]:
@@ -257,10 +299,26 @@ def modifier_portail(src: str) -> tuple[str, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# sw.js : les pages sont servies « cache d'abord » avec une version de cache figée ; sans changer cette version, un navigateur qui a déjà
+# visité le portail ou le tableau de bord continue d'afficher l'ancienne page.
+# ---------------------------------------------------------------------------
+SW_RE = re.compile(r"const CACHE_NAME = 'vitisens-v(\d+)';")
+
+
+def modifier_sw(src: str) -> tuple[str, list[str]]:
+    m = SW_RE.search(src)
+    if not m:
+        raise ValueError("ligne « const CACHE_NAME = 'vitisens-vN'; » introuvable")
+    if int(m.group(1)) >= 2:
+        return src, []
+    return SW_RE.sub("const CACHE_NAME = 'vitisens-v2';", src, count=1), ["cache du navigateur renouvelé"]
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 FICHIERS = (("serveur_vitisens.py", modifier_serveur), ("generer_bulletins_v4.py", modifier_generateur),
-            ("dashboard_v2.html", modifier_dashboard), ("portail_client.html", modifier_portail))
+            ("dashboard_v2.html", modifier_dashboard), ("portail_client.html", modifier_portail), ("sw.js", modifier_sw))
 
 
 def main(argv=None) -> int:

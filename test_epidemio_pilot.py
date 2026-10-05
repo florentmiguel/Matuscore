@@ -612,6 +612,90 @@ class TestMessageMoteurIntrouvable(unittest.TestCase):
         self.assertNotIn("git pull", m)
 
 
+class TestEpi(Base):
+    def syn(self, evenements=None, tendance="PRESSION EN HAUSSE", sorties=()):
+        evts = evenements if evenements is not None else []
+        return {"infections_primaires": {"evenements": evts}, "infections_secondaires": {"evenements": []},
+                "sorties_taches_attendues": list(sorties), "tendance": {"libelle": tendance}}
+
+    def e(self, date, niveau, force):
+        return {"date": date, "niveau": niveau, "force_dh": force}
+
+    def test_sur_le_jeu_de_reference(self):
+        syn = ep.synthese_mildiou(faux_resultat(), now=NOW)
+        self.assertEqual(ep.epi_depuis_synthese(syn, NOW), "très fort et en hausse, avec une infection attendue autour du 07/10")
+
+    def test_infection_attendue_avec_chaque_tendance(self):
+        evt = [self.e("2026-10-07", "modérée", 90.0)]
+        self.assertEqual(ep.epi_depuis_synthese(self.syn(evt, "PRESSION EN HAUSSE"), NOW), "modéré et en hausse, avec une infection attendue autour du 07/10")
+        self.assertEqual(ep.epi_depuis_synthese(self.syn(evt, "PRESSION EN BAISSE"), NOW), "modéré et en baisse, avec une infection attendue autour du 07/10")
+        self.assertEqual(ep.epi_depuis_synthese(self.syn([self.e("2026-10-07", "forte", 150.0)], "PRESSION STABLE"), NOW),
+                         "fort et stable, avec une infection attendue autour du 07/10")
+        self.assertEqual(ep.epi_depuis_synthese(self.syn([self.e("2026-10-07", "faible", 20.0)], "PRESSION FAIBLE"), NOW),
+                         "faible, avec une infection attendue autour du 07/10")
+
+    def test_la_plus_forte_des_infections_attendues_est_citee(self):
+        evt = [self.e("2026-10-06", "modérée", 80.0), self.e("2026-10-09", "forte", 160.0), self.e("2026-10-08", "faible", 10.0)]
+        self.assertIn("autour du 09/10", ep.epi_depuis_synthese(self.syn(evt), NOW))
+
+    def test_infection_recente_seulement(self):
+        evt = [self.e("2026-10-03", "modérée", 90.0)]
+        self.assertEqual(ep.epi_depuis_synthese(self.syn(evt, "PRESSION EN BAISSE"), NOW), "modéré, infection récente le 03/10 et pression en baisse")
+        self.assertEqual(ep.epi_depuis_synthese(self.syn(evt, "PRESSION FAIBLE"), NOW), "modéré, infection récente le 03/10")
+
+    def test_une_infection_de_plus_de_sept_jours_n_est_plus_citee(self):
+        self.assertTrue(ep.epi_depuis_synthese(self.syn([self.e("2026-09-27", "forte", 150.0)]), NOW).startswith("faible, aucune infection"))
+
+    def test_rien_d_attendu(self):
+        self.assertEqual(ep.epi_depuis_synthese(self.syn([], "PRESSION FAIBLE"), NOW), "faible, aucune infection significative attendue dans les 7 prochains jours")
+
+    def test_jamais_de_point_final_ni_de_jargon_du_moteur(self):
+        for evt, tend in (([], "PRESSION FAIBLE"), ([self.e("2026-10-07", "forte", 150.0)], "PRESSION STABLE"), ([self.e("2026-10-03", "modérée", 90.0)], "PRESSION EN BAISSE")):
+            texte = ep.epi_depuis_synthese(self.syn(evt, tend), NOW)
+            self.assertFalse(texte.endswith("."), texte)                       # le bulletin ajoute lui-même le point
+            for mot in ("moteur", "modèle", "°C"):
+                self.assertNotIn(mot, texte)
+
+    def test_epi_si_absent(self):
+        orig, orig_s = ep.calculer, ep.synthese_mildiou
+        try:
+            ep.calculer = lambda lat, lon, now=None, get=None: (faux_resultat(), {"profil": "p"})
+            ep.synthese_mildiou = lambda res, now=None, **k: orig_s(res, now=NOW, **k)
+            base_ia = {"risque_mildiou": "a", "reco_mildiou": "b"}
+            r = ep.epi_si_absent(base_ia, 49.25, 3.96, now=NOW)
+            self.assertEqual(r, {**base_ia, "epi": "très fort et en hausse, avec une infection attendue autour du 07/10"})
+            for epi_vide in ("", "   ", None):
+                self.assertIn("epi", ep.epi_si_absent({**base_ia, "epi": epi_vide}, 49.25, 3.96, now=NOW))
+            self.assertIsNone(ep.epi_si_absent({**base_ia, "epi": "déjà là"}, 49.25, 3.96, now=NOW))      # l'EPI de l'IA est respecté
+            self.assertIsNone(ep.epi_si_absent("pas un dictionnaire", 49.25, 3.96, now=NOW))
+        finally:
+            ep.calculer, ep.synthese_mildiou = orig, orig_s
+
+    def test_position_par_defaut_quand_elle_n_est_pas_fournie(self):
+        vues = []
+        orig, orig_s = ep.calculer, ep.synthese_mildiou
+        try:
+            ep.calculer = lambda lat, lon, now=None, get=None: (vues.append((lat, lon)) or (faux_resultat(), {"profil": "p"}))
+            ep.synthese_mildiou = lambda res, now=None, **k: orig_s(res, now=NOW, **k)
+            ep.epi_si_absent({"risque_mildiou": "a"}, None, "", now=NOW)
+            ep.epi_si_absent({"risque_mildiou": "a"}, 49.1, 4.0, now=NOW)
+        finally:
+            ep.calculer, ep.synthese_mildiou = orig, orig_s
+        self.assertEqual(vues, [(ep.COORDS_DEFAUT["lat"], ep.COORDS_DEFAUT["lon"]), (49.1, 4.0)])
+
+    def test_epi_si_absent_sans_moteur_ne_change_rien(self):
+        orig = ep.calculer
+
+        def panne(*a, **k):
+            raise ep.MoteurIndisponible("absent")
+        try:
+            ep.calculer = panne
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertIsNone(ep.epi_si_absent({"risque_mildiou": "a"}, 49.25, 3.96, now=NOW))
+        finally:
+            ep.calculer = orig
+
+
 class TestRisqueJour(unittest.TestCase):
     def test_libelles_et_seuils(self):
         attendu = [(0, "Nul"), (None, "Nul"), (0.1, "Faible"), (49.9, "Faible"), (50, "Modéré"), (99.9, "Modéré"),
@@ -805,8 +889,13 @@ def silencieux(fonction, *args):
 
 
 STUB_SERVEUR = """import json
-from flask import Flask
+from flask import Flask, jsonify, request
 app = Flask(__name__)
+
+@app.route('/api/autre')
+def autre():
+    return jsonify({"x": 1})
+
 # from generer_bulletins_v4 import build_bulletin as _build_bulletin
 
 def _build_bulletin(client, av, prescriptions, suivi, meteo):
@@ -912,7 +1001,7 @@ def executer(src):
 class TestBrancherServeur(unittest.TestCase):
     def test_trois_etapes_compilent_et_sont_idempotentes(self):
         nouveau, etapes = br.modifier_serveur(STUB_SERVEUR)
-        self.assertEqual(etapes, ["moteur", "style", "communes"])
+        self.assertEqual(etapes, ["moteur", "style", "communes", "epi"])
         compile(nouveau, "stub", "exec")
         self.assertEqual(br.modifier_serveur(nouveau), (nouveau, []))
         self.assertIn("{bloc_epidemio}", nouveau)
@@ -923,7 +1012,7 @@ class TestBrancherServeur(unittest.TestCase):
         v2 = (STUB_SERVEUR.replace(br.S_ROUTE, br.BLOC_MOTEUR + br.S_ROUTE).replace(br.S_APPEL, br.S_APPEL + br.LIGNES_APPEL)
               .replace(br.S_PROMPT, "{bloc_epidemio}"))
         nouveau, etapes = br.modifier_serveur(v2)
-        self.assertEqual(etapes, ["style", "communes"])
+        self.assertEqual(etapes, ["style", "communes", "epi"])
         self.assertEqual(nouveau, br.modifier_serveur(STUB_SERVEUR)[0])                # converge vers un branchement à neuf
 
     def test_point_d_ancrage_manquant_ou_ambigu_refuse(self):
@@ -992,7 +1081,7 @@ class TestBrancherServeur(unittest.TestCase):
         nouveau, etapes = br.modifier_serveur(v)
         self.assertIn("un texte pour chacun des 4 champs suivants, en respectant la CONSIGNE DE RÉDACTION ci-dessus.", nouveau)
         self.assertNotIn("phrases courtes, techniques", nouveau)
-        self.assertEqual(etapes, ["moteur", "style", "communes"])
+        self.assertEqual(etapes, ["moteur", "style", "communes", "epi"])
 
     def test_style_reformule_toujours_reconnu(self):
         v = STUB_SERVEUR.replace("phrases courtes, techniques, factuelles, sans emphase ni formules commerciales.",
@@ -1020,6 +1109,77 @@ class TestBrancherServeur(unittest.TestCase):
         nouveau, _ = br.modifier_serveur(STUB_SERVEUR + "\n# dans le style suivant : autre chose.")
         self.assertIn("en respectant la CONSIGNE DE RÉDACTION ci-dessus.", nouveau)
         self.assertIn("# dans le style suivant : autre chose.", nouveau)                      # le commentaire n'est pas touché
+
+    def serveur_epi(self, reponse_ia, statut=200):
+        """Serveur factice branché dont la route de génération renvoie reponse_ia (JSON)."""
+        from flask import jsonify
+        mod = executer(br.modifier_serveur(STUB_SERVEUR)[0])
+        mod.app.view_functions["generer_texte_bulletin"] = lambda: (jsonify(reponse_ia), statut)
+        return mod.app.test_client()
+
+    def avec_moteur(self, fonction):
+        orig, orig_s = ep.calculer, ep.synthese_mildiou
+        try:
+            ep.calculer = lambda lat, lon, now=None, get=None: (faux_resultat(), {"profil": "p"})
+            ep.synthese_mildiou = lambda res, now=None, **k: orig_s(res, now=NOW, **k)
+            return fonction()
+        finally:
+            ep.calculer, ep.synthese_mildiou = orig, orig_s
+
+    def test_le_serveur_complete_l_epi_absent_de_la_reponse(self):
+        try:
+            import flask  # noqa: F401
+        except ImportError:
+            self.skipTest("Flask absent")
+        ia = {"risque_mildiou": "RISQUE MILDIOU — X\n\nPara.", "reco_mildiou": "b", "risque_oidium": "c", "reco_oidium": "d"}
+        r = self.avec_moteur(lambda: self.serveur_epi(ia).get("/api/generer-texte-bulletin"))
+        d = r.get_json()
+        self.assertEqual(d["epi"], "très fort et en hausse, avec une infection attendue autour du 07/10")
+        self.assertEqual({k: d[k] for k in ia}, ia)                                    # les autres champs sont intacts, retours à la ligne compris
+        self.assertEqual(int(r.headers["Content-Length"]), len(r.data))               # la réponse reste bien formée
+        self.assertEqual(r.mimetype, "application/json")
+
+    def test_le_serveur_respecte_un_epi_deja_present(self):
+        try:
+            import flask  # noqa: F401
+        except ImportError:
+            self.skipTest("Flask absent")
+        ia = {"epi": "potentiel modéré", "risque_mildiou": "a"}
+        d = self.avec_moteur(lambda: self.serveur_epi(ia).get("/api/generer-texte-bulletin")).get_json()
+        self.assertEqual(d, ia)
+
+    def test_le_serveur_ne_touche_ni_aux_erreurs_ni_aux_autres_routes(self):
+        try:
+            import flask  # noqa: F401
+        except ImportError:
+            self.skipTest("Flask absent")
+        erreur = self.avec_moteur(lambda: self.serveur_epi({"error": "clé manquante"}, 400).get("/api/generer-texte-bulletin"))
+        self.assertEqual((erreur.status_code, erreur.get_json()), (400, {"error": "clé manquante"}))
+        autre = self.avec_moteur(lambda: self.serveur_epi({"x": 1}).get("/api/autre"))
+        self.assertEqual(autre.get_json(), {"x": 1})
+
+    def test_le_serveur_sans_moteur_renvoie_la_reponse_telle_quelle(self):
+        try:
+            import flask  # noqa: F401
+        except ImportError:
+            self.skipTest("Flask absent")
+        orig = ep.calculer
+
+        def panne(*a, **k):
+            raise ep.MoteurIndisponible("absent")
+        try:
+            ep.calculer = panne
+            with contextlib.redirect_stderr(io.StringIO()):
+                r = self.serveur_epi({"risque_mildiou": "a"}).get("/api/generer-texte-bulletin")
+        finally:
+            ep.calculer = orig
+        self.assertEqual((r.status_code, r.get_json()), (200, {"risque_mildiou": "a"}))
+
+    def test_etape_epi_ajoutee_a_un_serveur_deja_a_jour_sur_le_reste(self):
+        complet = br.modifier_serveur(STUB_SERVEUR)[0]
+        sans_epi = complet.replace(br.BLOC_EPI, "")
+        nouveau, etapes = br.modifier_serveur(sans_epi)
+        self.assertEqual((etapes, nouveau), (["epi"], complet))
 
 
 class TestBrancherGenerateur(unittest.TestCase):
@@ -1163,6 +1323,48 @@ class TestBrancherHtml(unittest.TestCase):
             br.modifier_dashboard(STUB_DASHBOARD.replace("${av.risque_mildiou||'?'}", "AUTRE"))
         with self.assertRaises(ValueError):
             br.modifier_portail(STUB_PORTAIL + STUB_PORTAIL)                            # ancres en double : ambigu
+
+
+STUB_DASHBOARD_EPI = ("<input id=\"bh_ep\" value=\"\">\n"
+                      "async function gen(){\n  const d={};\n  document.getElementById('bh_rm').value=d.risque_mildiou||'';\n}\n")
+
+
+class TestBrancherDashboardEpi(unittest.TestCase):
+    def test_ligne_epi_ajoutee_si_elle_manque(self):
+        src = STUB_DASHBOARD + STUB_DASHBOARD_EPI
+        nouveau, etapes = br.modifier_dashboard(src)
+        self.assertEqual(etapes, ["retours à la ligne", "champ EPI"])
+        self.assertIn("  document.getElementById('bh_ep').value=d.epi||'';\n  document.getElementById('bh_rm')", nouveau)
+        self.assertEqual(br.modifier_dashboard(nouveau), (nouveau, []))                # idempotent
+
+    def test_rien_si_la_ligne_existe_deja(self):
+        src = STUB_DASHBOARD + STUB_DASHBOARD_EPI.replace("  document.getElementById('bh_rm')", "  document.getElementById('bh_ep').value=d.epi||'';\n  document.getElementById('bh_rm')")
+        self.assertEqual(br.modifier_dashboard(src)[1], ["retours à la ligne"])
+
+    def test_pas_de_refus_si_le_formulaire_n_a_pas_de_champ_epi_ou_si_l_ancre_differe(self):
+        self.assertEqual(br.modifier_dashboard(STUB_DASHBOARD)[1], ["retours à la ligne"])
+        autre_indent = STUB_DASHBOARD + STUB_DASHBOARD_EPI.replace("  document.getElementById('bh_rm')", "    document.getElementById('bh_rm')")
+        self.assertEqual(br.modifier_dashboard(autre_indent)[1], ["retours à la ligne"])      # on n'invente pas : on ne fait rien
+
+
+class TestBrancherServiceWorker(unittest.TestCase):
+    SW = "// VITI Sens — Service Worker\nconst CACHE_NAME = 'vitisens-v1';\nconst ASSETS = [];\n"
+
+    def test_version_du_cache_renouvelee(self):
+        nouveau, etapes = br.modifier_sw(self.SW)
+        self.assertEqual(etapes, ["cache du navigateur renouvelé"])
+        self.assertIn("const CACHE_NAME = 'vitisens-v2';", nouveau)
+        self.assertNotIn("vitisens-v1", nouveau)
+        self.assertEqual(br.modifier_sw(nouveau), (nouveau, []))                       # idempotent
+
+    def test_une_version_deja_superieure_n_est_pas_touchee(self):
+        for v in (2, 3, 12):
+            src = self.SW.replace("v1", f"v{v}")
+            self.assertEqual(br.modifier_sw(src), (src, []))
+
+    def test_ligne_introuvable_refusee(self):
+        with self.assertRaises(ValueError):
+            br.modifier_sw("const AUTRE = 1;\n")
 
 
 class TestBrancherLigneDeCommande(unittest.TestCase):
