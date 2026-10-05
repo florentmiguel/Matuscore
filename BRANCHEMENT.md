@@ -48,6 +48,16 @@ modèle, jour par jour.
 * Génère un bulletin client et regarde le paragraphe « Situation sur votre commune ».
 * Tests : `cd ~/Matuscore && EPIDEMIO_PATH=~/epidemio venv/bin/python3 test_epidemio_pilot.py`.
 
+## Dépannage
+* **« No module named 'historique_meteo' »** : le dépôt `epidemio` du VPS n'a pas le nouveau fichier. Pousse la nouvelle version depuis le PC
+  (`git add .`, `git commit -m "..."`, `git push` dans le dossier du dépôt epidemio), puis `cd ~/epidemio && git pull` et `ls historique_meteo.py`.
+  Un `git pull` qui répond « Already up to date » alors que le fichier manque signifie que rien n'a été poussé depuis le PC.
+  **Tant que ce fichier manque, Pilot fonctionne mais le mildiou de la génération de texte retombe sur l'ancien modèle et les bulletins
+  n'ont pas le paragraphe par commune.** Mets d'abord à jour `epidemio`, puis Pilot.
+* **« REFUSÉ, rien n'a été écrit »** : le fichier cité diffère de la version attendue. Il n'a pas été touché, les autres le sont. La ligne
+  contient le texte trouvé à la place : copie-la, elle suffit en général pour adapter le script.
+* **Le script est sans danger à relancer** : il ne refait que ce qui manque.
+
 ## Revenir en arrière
 ```bash
 cd ~/Matuscore && python3 brancher_epidemio.py --retirer && sudo systemctl restart matuscore

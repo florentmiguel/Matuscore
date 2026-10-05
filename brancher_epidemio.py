@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import sys
 
@@ -46,6 +47,11 @@ S_PROMPT = "SYNTHÈSE DU MODÈLE ÉPIDÉMIOLOGIQUE :\n{json.dumps(synthese, ensu
 S_STYLE = ("un texte court pour chacun des 5 champs suivants, dans le style suivant : phrases courtes, techniques, factuelles, "
            "sans emphase ni formules commerciales.")
 S_STYLE_NOUVEAU = "un texte pour chacun des 5 champs suivants, en respectant la CONSIGNE DE RÉDACTION ci-dessus."
+
+# La phrase du prompt existe en plusieurs versions (4 ou 5 champs, style plus ou moins détaillé) : on cherche sa forme générale.
+STYLE_COMPLET_RE = re.compile(r"un texte court pour chacun des (\d+) champs suivants, dans le style suivant : [^.\n]*\.")
+STYLE_SEUL_RE = re.compile(r"dans le style suivant : [^.\n]*\.")
+S_STYLE_SEUL_NOUVEAU = "en respectant la CONSIGNE DE RÉDACTION ci-dessus."
 
 MARQUEUR_MOTEUR = "from epidemio_pilot import bp_epidemio"
 MARQUEUR_STYLE = "CONSIGNE DE RÉDACTION ci-dessus"
@@ -98,6 +104,24 @@ def _une_fois(src: str, ancre: str, nom: str):
         raise ValueError(f"point d'ancrage « {nom} » trouvé {n} fois (attendu : 1)")
 
 
+def _extrait_style(src: str) -> str:
+    """Les lignes du fichier qui parlent du style de l'IA, pour qu'un refus montre ce qui a été trouvé à la place."""
+    lignes = [l.strip() for l in src.split("\n") if "style suivant" in l or "Rédige, à partir" in l or "texte court" in l]
+    return " | ".join(l[:320] for l in lignes[:3]) or "aucune ligne contenant « style suivant », « Rédige, à partir » ou « texte court »"
+
+
+def _remplacer_style(src: str) -> str:
+    """Remplace la consigne de style de l'ancien prompt par un renvoi à la CONSIGNE DE RÉDACTION. Forme complète d'abord (« un
+    texte court pour chacun des N champs suivants, dans le style suivant : ... »), sinon la seule clause de style."""
+    n = len(STYLE_COMPLET_RE.findall(src))
+    if n == 1:
+        return STYLE_COMPLET_RE.sub(lambda m: f"un texte pour chacun des {m.group(1)} champs suivants, {S_STYLE_SEUL_NOUVEAU}", src, count=1)
+    if n == 0 and len(STYLE_SEUL_RE.findall(src)) == 1:
+        return STYLE_SEUL_RE.sub(S_STYLE_SEUL_NOUVEAU, src, count=1)
+    raise ValueError(f"consigne de style du prompt : {n} correspondance(s) de la forme attendue (1 attendue). "
+                     f"Ce que contient le fichier : {_extrait_style(src)}")
+
+
 def modifier_serveur(src: str) -> tuple[str, list[str]]:
     etapes = []
     if MARQUEUR_MOTEUR not in src:
@@ -108,8 +132,7 @@ def modifier_serveur(src: str) -> tuple[str, list[str]]:
         src = src.replace(S_PROMPT, "{bloc_epidemio}", 1)
         etapes.append("moteur")
     if MARQUEUR_STYLE not in src:
-        _une_fois(src, S_STYLE, "consigne de style du prompt")
-        src = src.replace(S_STYLE, S_STYLE_NOUVEAU, 1)
+        src = _remplacer_style(src)
         etapes.append("style")
     if MARQUEUR_COMMUNES not in src:
         _une_fois(src, S_ROUTE, "route /api/generer-texte-bulletin")
@@ -251,7 +274,7 @@ def main(argv=None) -> int:
         print(f"Introuvable : {os.path.join(dossier, 'serveur_vitisens.py')} (lance le script dans le dossier de Pilot)")
         return 1
 
-    code = 0
+    code, refuses = 0, []
     for nom, modifier in FICHIERS:
         chemin = os.path.join(dossier, nom)
         sauvegarde = chemin + SAUVEGARDE
@@ -272,6 +295,7 @@ def main(argv=None) -> int:
         except (ValueError, SyntaxError) as e:
             print(f"  {nom:<26} REFUSÉ, rien n'a été écrit : {e}")
             code = 1
+            refuses.append(nom)
             continue
         if not etapes:
             print(f"  {nom:<26} déjà à jour")
@@ -283,7 +307,9 @@ def main(argv=None) -> int:
         print(f"  {nom:<26} modifié ({', '.join(etapes)})")
 
     if code:
-        print("\nUn fichier diffère de la version attendue : envoie-moi-le pour adapter le script. Les autres sont à jour.")
+        print(f"\nFichier(s) refusé(s), non modifié(s) : {', '.join(refuses)}.")
+        print("Copie-moi la ligne « REFUSÉ » ci-dessus (elle contient le texte trouvé à la place) : en général elle suffit pour adapter")
+        print("le script, sans que tu aies à m'envoyer le fichier. Les autres fichiers sont traités.")
     elif a.retirer:
         print("\nRedémarre le service pour appliquer : sudo systemctl restart matuscore")
     else:

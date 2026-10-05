@@ -57,6 +57,13 @@ def chemin_moteur() -> str:
     return os.path.expanduser(os.environ.get("EPIDEMIO_PATH", "~/epidemio"))
 
 
+def message_moteur_introuvable(chemin: str, erreur: Exception) -> str:
+    msg = f"moteur introuvable ou inutilisable dans {chemin} : {erreur}"
+    if "historique_meteo" in str(erreur):
+        msg += " — le dépôt epidemio n'est pas à jour : cd ~/epidemio && git pull (après avoir poussé la nouvelle version depuis le PC)"
+    return msg
+
+
 def charger_moteur():
     """(mildiou_primaire, historique_meteo). Le dossier est AJOUTÉ en fin de sys.path : il ne peut pas masquer un module
     de Pilot."""
@@ -67,7 +74,7 @@ def charger_moteur():
         import mildiou_primaire as mp
         import historique_meteo as hm
     except Exception as e:                                          # noqa: BLE001 : toute panne d'import est « indisponible »
-        raise MoteurIndisponible(f"moteur introuvable ou inutilisable dans {chemin} : {e}") from e
+        raise MoteurIndisponible(message_moteur_introuvable(chemin, e)) from e
     return mp, hm
 
 
@@ -344,7 +351,7 @@ def consigne_redaction(titres: dict) -> str:
         "ni jargon inutile. Garde les chiffres utiles (dates au format JJ/MM, millimètres de pluie, pourcentage d'humectation, et "
         "l'intensité en °C·h pour la seule infection principale) sans les multiplier. N'écris jamais « modèle », « moteur » ni « données ».\n"
         "Les champs « reco_mildiou » et « reco_oidium » : 2 à 3 phrases concrètes et proportionnées au risque, sans titre.\n"
-        "Le champ « epi » reste une seule courte phrase, sans point final.\n"
+        "Si le champ « epi » est demandé, il reste une seule courte phrase, sans point final.\n"
         "Dans le JSON, les retours à la ligne s'écrivent \\n."
     )
 

@@ -601,6 +601,17 @@ class TestPhraseCommune(unittest.TestCase):
         self.assertTrue(ep.phrase_commune(syn, NOW).startswith("Aucune infection significative"))
 
 
+class TestMessageMoteurIntrouvable(unittest.TestCase):
+    def test_indique_comment_mettre_a_jour_quand_historique_meteo_manque(self):
+        m = ep.message_moteur_introuvable("/home/ubuntu/epidemio", ModuleNotFoundError("No module named 'historique_meteo'"))
+        self.assertIn("No module named 'historique_meteo'", m)
+        self.assertIn("cd ~/epidemio && git pull", m)
+
+    def test_autre_erreur_sans_conseil(self):
+        m = ep.message_moteur_introuvable("/x", ModuleNotFoundError("No module named 'autre'"))
+        self.assertNotIn("git pull", m)
+
+
 class TestRisqueJour(unittest.TestCase):
     def test_libelles_et_seuils(self):
         attendu = [(0, "Nul"), (None, "Nul"), (0.1, "Faible"), (49.9, "Faible"), (50, "Modéré"), (99.9, "Modéré"),
@@ -976,6 +987,41 @@ class TestBrancherServeur(unittest.TestCase):
         self.assertEqual((nom, client), ("BULLETIN", {"commune": "X"}))
 
 
+    def test_variante_a_quatre_champs_sans_epi(self):
+        v = STUB_SERVEUR.replace("chacun des 5 champs", "chacun des 4 champs")
+        nouveau, etapes = br.modifier_serveur(v)
+        self.assertIn("un texte pour chacun des 4 champs suivants, en respectant la CONSIGNE DE RÉDACTION ci-dessus.", nouveau)
+        self.assertNotIn("phrases courtes, techniques", nouveau)
+        self.assertEqual(etapes, ["moteur", "style", "communes"])
+
+    def test_style_reformule_toujours_reconnu(self):
+        v = STUB_SERVEUR.replace("phrases courtes, techniques, factuelles, sans emphase ni formules commerciales.",
+                                 "ton sobre, phrases courtes, sans jargon.")
+        self.assertIn("en respectant la CONSIGNE DE RÉDACTION ci-dessus.", br.modifier_serveur(v)[0])
+
+    def test_sans_les_mots_un_texte_court_seule_la_clause_de_style_est_remplacee(self):
+        v = STUB_SERVEUR.replace("un texte court pour chacun", "un texte pour chacun")
+        nouveau, _ = br.modifier_serveur(v)
+        self.assertIn("un texte pour chacun des 5 champs suivants, en respectant la CONSIGNE DE RÉDACTION ci-dessus.", nouveau)
+
+    def test_un_refus_montre_ce_que_contient_le_fichier(self):
+        v = STUB_SERVEUR.replace(br.S_STYLE, "un texte libre pour chaque champ, comme tu veux.")
+        with self.assertRaises(ValueError) as e:
+            br.modifier_serveur(v)
+        self.assertIn("consigne de style du prompt", str(e.exception))
+        self.assertIn("Rédige, à partir de CES données", str(e.exception))                 # la ligne trouvée à la place est citée
+
+    def test_deux_clauses_de_style_isolees_sont_ambigues(self):
+        v = STUB_SERVEUR.replace("un texte court pour chacun des 5 champs suivants, ", "") + "\n# dans le style suivant : autre chose."
+        with self.assertRaises(ValueError):
+            br.modifier_serveur(v)
+
+    def test_une_clause_isolee_en_plus_de_la_phrase_complete_n_empeche_rien(self):
+        nouveau, _ = br.modifier_serveur(STUB_SERVEUR + "\n# dans le style suivant : autre chose.")
+        self.assertIn("en respectant la CONSIGNE DE RÉDACTION ci-dessus.", nouveau)
+        self.assertIn("# dans le style suivant : autre chose.", nouveau)                      # le commentaire n'est pas touché
+
+
 class TestBrancherGenerateur(unittest.TestCase):
     def setUp(self):
         self.avant = executer(STUB_GENERATEUR)
@@ -1155,6 +1201,18 @@ class TestBrancherLigneDeCommande(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(d, "dashboard_v2.html" + br.SAUVEGARDE)))     # et sans sauvegarde
         self.assertIn("epidemio_pilot", self.lire(d, "serveur_vitisens.py"))                       # les autres sont traités
         self.assertIn("analyse_en_paragraphes", self.lire(d, "generer_bulletins_v4.py"))
+
+    def test_la_synthese_nomme_le_fichier_refuse(self):
+        d = self.dossier(**{"serveur_vitisens.py": STUB_SERVEUR.replace(br.S_STYLE, "texte libre.")})
+        sortie = io.StringIO()
+        with contextlib.redirect_stdout(sortie):
+            code = br.main([d])
+        texte = sortie.getvalue()
+        self.assertEqual(code, 1)
+        self.assertIn("serveur_vitisens.py        REFUSÉ", texte)
+        self.assertIn("Fichier(s) refusé(s), non modifié(s) : serveur_vitisens.py.", texte)
+        self.assertIn("Copie-moi la ligne « REFUSÉ »", texte)
+        self.assertIn("analyse_en_paragraphes", self.lire(d, "generer_bulletins_v4.py"))        # les autres sont traités
 
     def test_fichiers_absents_ignores_serveur_obligatoire(self):
         d = self.dossier(**{"dashboard_v2.html": None, "portail_client.html": None})
