@@ -73,6 +73,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 input,textarea,select{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-bottom:8px}
 textarea{min-height:60px}
 .alert{padding:12px;border-radius:8px;margin-bottom:10px;font-size:13px}
+/* Jauge de pression cryptogamique (bulletin) */
+.jg{background:#fff;border:1px solid #E5EDE7;border-radius:10px;padding:12px 14px 10px;margin-bottom:12px;text-align:center}
+.jg-tg{display:inline-flex;background:var(--gbg);border-radius:20px;padding:3px;margin-bottom:6px}
+.jg-tg button{border:none;background:none;padding:5px 14px;border-radius:16px;font-size:12px;font-weight:600;color:var(--gr);cursor:pointer}
+.jg-tg button.on{background:#132F21;color:#fff}
+.jg svg{display:block;width:100%;max-width:260px;margin:0 auto}
+.jg-ai{transition:transform 1.1s cubic-bezier(.25,1.3,.5,1)}
+.jg-sc{font-size:30px;font-weight:800;color:#132F21;line-height:1;margin-top:-6px}
+.jg-sc small{font-size:13px;font-weight:600;color:var(--gr)}
+.jg-zo{font-size:13px;font-weight:700;margin-top:4px}
+.jg-ph{font-size:12.5px;color:#374151;margin-top:3px}
+.jg-nt{font-size:10.5px;color:var(--gr);margin-top:6px}
 .al-g{background:#E8F5E9;color:#2E7D32}.al-o{background:#FFF3E0;color:#E65100}.al-r{background:#FFEBEE;color:#C62828}.al-b{background:#E3F2FD;color:#1565C0}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .field-label{font-size:11px;color:var(--gr);display:block;margin-bottom:3px}
@@ -857,12 +869,58 @@ function showTab(name){
  showSubTab(mega, name);
 }
 
+// --- Jauge de pression cryptogamique : score 0-100 enregistré avec le bulletin (score_mildiou / score_oidium) ---
+const JAUGE_ZONES=[[33,'Pression faible','#40916C'],[66,'Pression modérée','#E07A1F'],[100,'Pression élevée','#C1121F']];
+let JAUGE_MALADIE='mildiou';
+function jaugeEsc(t){return String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function jaugeZone(v){return JAUGE_ZONES.find(z=>v<=z[0])||JAUGE_ZONES[2]}
+function jaugeTendance(txt){
+ // 1re ligne de l'analyse (« RISQUE MILDIOU — PRESSION EN BAISSE », « RISQUE OÏDIUM — PRESSION MODÉRÉE ET EN HAUSSE ») -> « en baisse »
+ const l=String(txt||'').split('\n')[0];
+ if(!/^\s*RISQUE/i.test(l)) return '';
+ const m=l.match(/EN HAUSSE|EN BAISSE|STABLE/i);
+ return m?m[0].toLowerCase():'';
+}
+function jaugeHTML(b){
+ const dispo=['mildiou','oidium'].filter(m=>Number.isFinite(b['score_'+m]));
+ if(!dispo.length) return '';
+ if(!dispo.includes(JAUGE_MALADIE)) JAUGE_MALADIE=dispo[0];
+ const m=JAUGE_MALADIE, v=Math.max(0,Math.min(100,Math.round(b['score_'+m]))), z=jaugeZone(v);
+ const tend=jaugeTendance(b['risque_'+m]);
+ const def=m==='mildiou'?"Charge d'infection attendue sur les 7 prochains jours":"Conditions moyennes sur les 7 prochains jours";
+ const lib={mildiou:'🍄 Mildiou',oidium:'🫧 Oïdium'};
+ const tg=dispo.length>1?`<div class="jg-tg">${dispo.map(k=>`<button class="${k===m?'on':''}" onclick="jaugeChoisir('${k}')">${lib[k]}</button>`).join('')}</div>`
+  :`<div class="jg-tg"><button class="on">${lib[m]}</button></div>`;
+ // demi-cercle de centre (110,110), rayon 88 ; l'aiguille part de -90° (score 0) et tourne jusqu'à +90° (score 100)
+ return `<div class="jg" id="jaugeBulletin">${tg}
+  <svg viewBox="0 0 220 126" role="img" aria-label="${lib[m].slice(3)} : ${v} sur 100, ${z[1].toLowerCase()}">
+   <defs><linearGradient id="jgGrad" x1="22" y1="0" x2="198" y2="0" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#40916C"/><stop offset=".5" stop-color="#F4A261"/><stop offset="1" stop-color="#C1121F"/></linearGradient></defs>
+   <path d="M22 110 A88 88 0 0 1 198 110" fill="none" stroke="#EEF2EF" stroke-width="18" stroke-linecap="round"/>
+   <path d="M22 110 A88 88 0 0 1 198 110" fill="none" stroke="url(#jgGrad)" stroke-width="14" stroke-linecap="round"/>
+   <g class="jg-ai" data-angle="${-90+v*1.8}" style="transform-origin:110px 110px;transform:rotate(-90deg)">
+    <line x1="110" y1="110" x2="110" y2="36" stroke="#132F21" stroke-width="4" stroke-linecap="round"/></g>
+   <circle cx="110" cy="110" r="8" fill="#132F21"/><circle cx="110" cy="110" r="3" fill="#fff"/>
+  </svg>
+  <div class="jg-sc">${v}<small> / 100</small></div>
+  <div class="jg-zo" style="color:${z[2]}">${z[1]}</div>
+  <div class="jg-ph">${jaugeEsc(def)}${tend?` · tendance <b>${jaugeEsc(tend)}</b>`:''}</div>
+  <div class="jg-nt">Indicateur calculé d'après la météo, indépendant des traitements réalisés</div>
+ </div>`;
+}
+function jaugeAnimer(){
+ const g=document.querySelector('#jaugeBulletin .jg-ai'); if(!g) return;
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{g.style.transform=`rotate(${g.dataset.angle}deg)`}));
+}
+function jaugeChoisir(m){JAUGE_MALADIE=m;renderBulletin();}
+
 function renderBulletin(){
  const b=DATA.bulletin;
  const d=b.date?new Date(b.date).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
  document.getElementById('bulletinDate').textContent=d?`Mis à jour le ${d}`:'';
  let h='';
  if(b.phenologie) h+=`<div class="alert al-g" style="margin-bottom:12px"><strong>🌿 Phénologie</strong><br>${b.phenologie}</div>`;
+ h+=jaugeHTML(b);
  if(b.risque_mildiou) h+=`<div class="alert al-o"><strong>🍄 Mildiou — Risque</strong><br>${b.risque_mildiou}</div>`;
  if(b.reco_mildiou) h+=`<div class="alert al-b"><strong>🍄 Mildiou — Recommandation</strong><br>${b.reco_mildiou}</div>`;
  if(b.risque_oidium) h+=`<div class="alert al-o"><strong>🫧 Oïdium — Risque</strong><br>${b.risque_oidium}</div>`;
@@ -870,6 +928,7 @@ function renderBulletin(){
  if(b.gel) h+=`<div class="alert al-r"><strong>❄️ Gel / Ravageurs</strong><br>${b.gel}</div>`;
  if(!h) h='<p style="color:var(--gr)">Aucun bulletin disponible pour le moment.</p>';
  document.getElementById('bulletinContent').innerHTML=h;
+ jaugeAnimer();
 }
 
 function renderMeteo(){

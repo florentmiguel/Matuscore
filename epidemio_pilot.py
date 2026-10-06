@@ -230,6 +230,28 @@ def _tendance(evenements: list[dict], now: datetime) -> dict:
                      "faible si les deux sont sous 50 °C·h)"}
 
 
+# Jauge du portail client : score 0-100. Mildiou : charge d'infection prévue (même règle que la tendance : somme des force_dh
+# des infections modélisées, primaires + secondaires, sur la fenêtre « prévue »), 400 °C·h = 100. Seuil provisoire, à recaler
+# en fin de saison sur la distribution des charges hebdomadaires 2026 (P90-P95).
+SEUIL_SCORE_MILDIOU = 400.0
+
+
+def score_mildiou(synthese: dict | None) -> int | None:
+    """Score 0-100 de la jauge mildiou, ou None sans synthèse du moteur."""
+    charge = ((synthese or {}).get("tendance") or {}).get("charge_prevue_dh")
+    if charge is None:
+        return None
+    return max(0, min(100, int(charge / SEUIL_SCORE_MILDIOU * 100 + 0.5)))   # arrondi au plus proche, 0,5 vers le haut
+
+
+def score_oidium(synthese_ancienne: dict | None) -> int | None:
+    """Score 0-100 de la jauge oïdium : moyenne des scores journaliers (0-100) de l'ancien modèle sur ses 7 jours, ou None."""
+    scores = [j.get("score") for j in (synthese_ancienne or {}).get("risques_oidium") or [] if j.get("score") is not None]
+    if not scores:
+        return None
+    return max(0, min(100, int(sum(scores) / len(scores) + 0.5)))
+
+
 def synthese_mildiou(res: dict, now: datetime | None = None, passe_j: int = 14, futur_j: int = 7, meta: dict | None = None) -> dict:
     """Résumé compact (JSON) : infections récentes et prévues, sorties de taches attendues, nuits de fructification,
     potentiel journalier à 7 jours. Dates en AAAA-MM-JJ (UTC pour les événements, heure locale pour les jours)."""
@@ -583,7 +605,8 @@ def bloc_commune_pour_client(client: dict, now: datetime | None = None, get=None
         risque_jours = {j["date"]: risque_jour(j["infection_primaire_dh"] + j["infection_secondaire_dh"])
                         for j in syn["potentiel_journalier"]}
         return {"titre": f"Situation sur votre commune ({nom}), d'après la météo : ", "texte": phrase_commune(syn, now),
-                "tendance": syn["tendance"]["libelle"], "source_position": pos["source"], "risque_jours": risque_jours}
+                "tendance": syn["tendance"]["libelle"], "source_position": pos["source"], "risque_jours": risque_jours,
+                "score_mildiou": score_mildiou(syn)}
     except Exception as e:                                          # noqa: BLE001
         print(f"[epidemio] bloc commune indisponible : {e}", file=sys.stderr)
         return None

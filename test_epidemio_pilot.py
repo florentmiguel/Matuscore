@@ -451,6 +451,27 @@ class TestTitreOidium(unittest.TestCase):
         self.assertIsNone(ep.titre_oidium({"risques_oidium": []}))
 
 
+class TestScoresJauge(unittest.TestCase):
+    def test_score_mildiou_normalise_sur_400(self):
+        self.assertEqual(ep.score_mildiou({"tendance": {"charge_prevue_dh": 274.0}}), 69)   # 274/400 = 68,5 -> 69
+        self.assertEqual(ep.score_mildiou({"tendance": {"charge_prevue_dh": 0.0}}), 0)
+        self.assertEqual(ep.score_mildiou({"tendance": {"charge_prevue_dh": 437.0}}), 100)  # plafonné
+
+    def test_score_mildiou_sans_moteur(self):
+        self.assertIsNone(ep.score_mildiou(None))
+        self.assertIsNone(ep.score_mildiou({}))
+
+    def test_score_oidium_moyenne_des_scores(self):
+        jours = [{"risque": "Modéré", "score": s} for s in (20, 30, 40, 50, 60, 70, 80)]
+        self.assertEqual(ep.score_oidium({"risques_oidium": jours}), 50)
+
+    def test_score_oidium_ignore_les_scores_absents_et_borne(self):
+        self.assertEqual(ep.score_oidium({"risques_oidium": [{"score": None}, {"score": 40}]}), 40)
+        self.assertEqual(ep.score_oidium({"risques_oidium": [{"score": 140}]}), 100)
+        self.assertIsNone(ep.score_oidium({"risques_oidium": []}))
+        self.assertIsNone(ep.score_oidium(None))
+
+
 class TestConsigne(unittest.TestCase):
     def test_forme_et_titres_imposes(self):
         c = ep.consigne_redaction({"mildiou": "RISQUE MILDIOU — PRESSION EN HAUSSE", "oidium": "RISQUE OÏDIUM — PRESSION FAIBLE"})
