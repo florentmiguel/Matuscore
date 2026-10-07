@@ -20,6 +20,8 @@ import caler_indice_chasmotheces as cal          # archive(annee) : cache ~/arch
 
 TZ = ZoneInfo("Europe/Paris")
 DEBOURREMENT_OBSERVE = {2026: date(2026, 3, 28)}       # débourrement observé (note de transition, session 11)
+# Début des vendanges observé (BBCH 87 en Champagne) : recale la fin de cycle. « Fin août » est pris au 28/08.
+VENDANGES = {2022: "2022-08-28", 2025: "2025-08-28", 2026: "2026-08-15"}
 
 
 def rows_annee(annee: int) -> list[dict]:
@@ -41,7 +43,8 @@ def main() -> int:
         obs_2026 = phen.lire_stades(chemin)
 
     print("Botrytis — Reims (49,25 N ; 3,96 E) — González-Domínguez et al. 2015\n")
-    print("année  débourr.  BBCH53   BBCH73   BBCH79   BBCH89     SEV1    SEV2    SEV3   classe          faible inter. sévère")
+    print("* : fin de cycle recalée sur la date de vendange observée\n")
+    print("année  débourr.  BBCH53   BBCH73   BBCH79   BBCH87     SEV1    SEV2    SEV3   classe          faible inter. sévère")
     lignes_res = []
     for annee in range(2012, 2027):
         try:
@@ -49,16 +52,19 @@ def main() -> int:
         except Exception as e:                                          # noqa: BLE001
             print(f"{annee}  archive indisponible ({e})")
             continue
-        obs = obs_2026 if annee == 2026 else None
+        obs = dict(obs_2026) if annee == 2026 else {}
+        if annee in VENDANGES:
+            obs[VENDANGES[annee]] = 87          # vendange champenoise : BBCH 86-87
         deb = pbg.brin(rows, TZ, annee, None)["debourrement"]
         deb = DEBOURREMENT_OBSERVE.get(annee, deb)
         if deb is None:
             print(f"{annee}  débourrement introuvable")
             continue
+        if annee in VENDANGES and annee != 2026:
+            obs[deb.isoformat()] = 9                # ancre de départ : les stades intermédiaires sont répartis entre débourrement et vendange
         bbch = phen.serie_bbch([r for r in rows if r["t"].year == annee], deb, TZ, obs or None)
-        # le stade plafonne à 89 après la maturité : on arrête la phénologie au premier jour à 89 (vendanges), sinon la fenêtre 2
-        # resterait ouverte jusqu'en décembre
-        j89 = next((d for d in sorted(bbch) if bbch[d] >= 89), None)
+        # on arrête la phénologie au premier jour à BBCH 87 (vendange champenoise)
+        j89 = next((d for d in sorted(bbch) if bbch[d] >= 87), None)
         if j89:
             bbch = {d: v for d, v in bbch.items() if d <= j89}
         res = bo.calculer_saison([r for r in rows if r["t"].year == annee], bbch, TZ)
@@ -68,7 +74,7 @@ def main() -> int:
             return j.strftime("%d/%m") if j else "  -  "
         cl = res["classification"] or {}
         pr = cl.get("probabilites") or {}
-        print(f"{annee}   {deb.strftime('%d/%m')}    {quand(53)}    {quand(73)}    {quand(79)}    {quand(89)}   "
+        print(f"{annee}{'*' if annee in VENDANGES else ' '}  {deb.strftime('%d/%m')}    {quand(53)}    {quand(73)}    {quand(79)}    {quand(87)}   "
               f"{res['sev1']:6.3f}  {res['sev2']:6.3f}  {res['sev3']:6.3f}   {cl.get('classe', '-'):<14}  "
               f"{pr.get('faible', 0):5.0%}  {pr.get('intermediaire', 0):5.0%}  {pr.get('severe', 0):5.0%}")
         for a in res["avertissements"]:
