@@ -102,6 +102,95 @@ def hiver(lignes_saison: list[dict], lignes_suivante: list[dict], saison: int) -
     return pluie, float(gel)
 
 
+# ---------------------------------------------------------------------------
+# Sénescence (type Delpierre 2009) : démarrage quand le jour raccourcit sous P_START, cumul quotidien de froid
+# (TB - Tmoy) x (P / P_START) si Tmoy < TB ; coloration (BBCH 92) au seuil Y1, chute à 50 % (BBCH 95) au seuil Y2 ou au premier
+# gel destructeur (T horaire <= GEL_C). Y1 et Y2 sont calés pour donner en moyenne 2011-2025 les dates repères régionales.
+# ---------------------------------------------------------------------------
+P_START, TB, GEL_C = 13.5, 20.0, -2.0
+REPERE_COLORATION, REPERE_CHUTE = (10, 15), (11, 5)
+
+
+def duree_jour(j: date, lat: float = LAT) -> float:
+    """Durée astronomique du jour (h)."""
+    n = j.timetuple().tm_yday
+    decl = 23.44 * math.sin(math.radians(360.0 / 365.0 * (n - 81)))
+    x = -math.tan(math.radians(lat)) * math.tan(math.radians(decl))
+    return 24.0 / math.pi * math.acos(max(-1.0, min(1.0, x)))
+
+
+def cumul_froid(rows: list[dict], saison: int) -> list[tuple[date, float, float]]:
+    """[(jour, cumul de froid, T horaire mini du jour)] à partir du jour où la durée du jour passe sous P_START."""
+    jours = {}
+    for r in rows:
+        j = r["t"].date()
+        if j.year == saison and j.month >= 7 and r["temp"] is not None:
+            jours.setdefault(j, []).append(r["temp"])
+    out, cumul = [], 0.0
+    for j in sorted(jours):
+        p = duree_jour(j)
+        if j.month < 7 or p >= P_START and not out:
+            continue
+        tm = sum(jours[j]) / len(jours[j])
+        if tm < TB:
+            cumul += (TB - tm) * (p / P_START)
+        out.append((j, cumul, min(jours[j])))
+    return out
+
+
+def dates_senescence(serie, y1: float, y2: float) -> tuple[date | None, date | None]:
+    """(coloration, chute) : premier jour où le cumul atteint y1, puis y2 ou le premier gel <= GEL_C après la coloration."""
+    col = chute = None
+    for j, c, tmin in serie:
+        if col is None and c >= y1:
+            col = j
+        if col is not None and (c >= y2 or tmin <= GEL_C):
+            chute = j
+            break
+    return col, chute
+
+
+def caler_seuil(series, repere, y_bas=1.0, y_haut=2000.0, cle=0):
+    """Seuil de cumul qui place la date moyenne (jour de l'année) sur le repère, par dichotomie."""
+    cible = {s: date(s, *repere).timetuple().tm_yday for s in series}
+    for _ in range(60):
+        y = (y_bas + y_haut) / 2
+        ecarts = []
+        for s, serie in series.items():
+            j = next((j for j, c, _ in serie if c >= y), None)
+            ecarts.append((j.timetuple().tm_yday if j else 366) - cible[s])
+        if sum(ecarts) / len(ecarts) > 0:
+            y_haut = y
+        else:
+            y_bas = y
+    return (y_bas + y_haut) / 2
+
+
+def formation_ponderee(rows: list[dict], saison: int, oi, col: date | None, chute: date | None) -> float:
+    """C2 pondéré par l'état du feuillage : poids 1 jusqu'à la coloration, décroissance linéaire jusqu'à la chute, puis 0."""
+    p = oi.PARAMS
+    pc = p["chasmotheces"]
+    debut = datetime(saison, 8, 15, tzinfo=timezone.utc)
+    froid, initie, integ = 0, False, 0.0
+    for r in rows:
+        if r["t"] < debut or r["temp"] is None or r["t"].year != saison:
+            continue
+        j = r["t"].date()
+        if chute and j >= chute:
+            break
+        if col and j >= col:
+            poids = max(0.0, 1.0 - (j - col).days / max(1, (chute - col).days)) if chute else 1.0
+        else:
+            poids = 1.0
+        T = r["temp"]
+        if not initie:
+            froid += T < pc["temperature_seuil_froid_c"]
+            initie = froid >= pc["seuil_heures_froid"]
+            continue
+        integ += poids * oi.taux_chasmotheces(T, p) / 24.0
+    return integ
+
+
 def resoudre(A, y):
     """Moindres carrés (équations normales) sans numpy."""
     n = len(A[0])
@@ -162,7 +251,7 @@ def main() -> int:
             print(f"  {saison + 1} : archive indisponible ({e}), hiver ignoré")
             suivante = []
         ph, gh = hiver(lignes, suivante, saison)
-        lignes_tab.append({"indice": annee_indice, "saison": saison, "cible": cible, "c1": c1, "c2": c2,
+        lignes_tab.append({"rows": rows, "indice": annee_indice, "saison": saison, "cible": cible, "c1": c1, "c2": c2,
                            "p_jul_sep": pression_periode(res, "07-01", "09-30", True),
                            "p_aou_oct": pression_periode(res, "08-01", "10-31", False),
                            "pluie_hiver": ph, "gel_hiver": gh})
@@ -186,6 +275,31 @@ def main() -> int:
     for l in ok:
         print(f"{l['indice']}   {l['saison']}  {l['cible']:4.0f}  {l['c1']:6.1f}  {l['p_jul_sep']:7.1f}  {l['p_aou_oct']:7.1f}  "
               f"{l['c2']:6.1f}  {l['pluie_hiver']:7.0f}  {l['gel_hiver']:6.0f}")
+
+    # --- sénescence : calage des seuils sur les repères régionaux, puis C2 pondéré ---
+    series = {l["saison"]: cumul_froid(l["rows"], l["saison"]) for l in ok}
+    y1 = caler_seuil(series, REPERE_COLORATION)
+    y2 = caler_seuil(series, REPERE_CHUTE)
+    print(f"\nSÉNESCENCE — seuils calés : coloration Y1 = {y1:.1f}, chute Y2 = {y2:.1f} "
+          f"(P_START {P_START} h, TB {TB} °C, gel destructeur {GEL_C} °C)")
+    for l in ok:
+        col, chute = dates_senescence(series[l["saison"]], y1, y2)
+        l["coloration"], l["chute"] = col, chute
+        l["c2s"] = formation_ponderee(l["rows"], l["saison"], oi, col, chute)
+    med_c2s = sorted(l["c2s"] for l in ok)[len(ok) // 2]
+    med_pl = sorted(l["pluie_hiver"] for l in ok)[len(ok) // 2]
+    for l in ok:
+        l["ind_ancien"] = 100 * (l["c2"] / 40.3) * (334 / max(1.0, l["pluie_hiver"]))
+        l["ind_sen"] = 100 * (l["c2s"] / med_c2s) * (med_pl / max(1.0, l["pluie_hiver"]))
+    print(f"Spearman : C2 {spearman([l['c2'] for l in ok], ref):+.2f} -> C2 sénescence {spearman([l['c2s'] for l in ok], ref):+.2f}   |   "
+          f"C2/pluie {spearman([l['ind_ancien'] for l in ok], ref):+.2f} -> C2 sénescence/pluie {spearman([l['ind_sen'] for l in ok], ref):+.2f}")
+    print(f"Écart absolu moyen à la référence : ancien {sum(abs(l['ind_ancien'] - l['cible']) for l in ok) / len(ok):.1f} "
+          f"-> sénescence {sum(abs(l['ind_sen'] - l['cible']) for l in ok) / len(ok):.1f} points   (médianes : C2 {med_c2s:.1f}, pluie {med_pl:.0f} mm)")
+    print("\nindice saison  réf.  coloration  chute    C2    C2_sén   ind.ancien  ind.sénescence")
+    for l in ok:
+        f = lambda d: d.strftime("%d/%m") if d else "  -  "
+        print(f"{l['indice']}   {l['saison']}  {l['cible']:4.0f}    {f(l['coloration'])}    {f(l['chute'])}  {l['c2']:5.1f}  {l['c2s']:6.1f}"
+              f"     {l['ind_ancien']:6.0f}      {l['ind_sen']:6.0f}")
     return 0
 
 
