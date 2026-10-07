@@ -1584,6 +1584,38 @@ Réponds UNIQUEMENT en JSON valide, sans aucun texte autour, avec exactement ces
     except Exception as e:
         return jsonify({"error": f"Erreur de génération : {e}"}), 500
 
+@app.route('/api/generer-texte-botrytis', methods=['GET'])
+def generer_texte_botrytis():
+    """Aide à la rédaction de la zone « Autres » du bulletin (admin) : synthèse du moteur botrytis et, si l'IA est configurée,
+    un paragraphe « Botrytis — ... » à relire. Lancé uniquement par le bouton du formulaire ; rien n'est enregistré ni affiché au client."""
+    try:
+        from epidemio_pilot import synthese_botrytis
+        synthese = synthese_botrytis(COORDS['lat'], COORDS['lon'])
+    except Exception as e:
+        return jsonify({"error": f"Modèle botrytis indisponible : {e}"}), 500
+    if not ANTHROPIC_API_KEY:
+        return jsonify({"synthese": synthese, "autre": "", "error_ia": "Génération par IA non configurée (ANTHROPIC_API_KEY manquante)."})
+    prompt = f"""Tu es un conseiller viticole en Champagne. Voici la synthèse du modèle botrytis (Botrytis cinerea) pour la région de Reims :
+
+{json.dumps(synthese, ensure_ascii=False, indent=2)}
+
+Repères : SEV1 = infections des inflorescences et jeunes grappes pendant la floraison (BBCH 53-73), qui conditionnent l'inoculum présent dans les grappes ; SEV2 = infections des baies par les conidies de la fermeture au début de la véraison (BBCH 79-83) ; SEV3 = propagation de baie à baie de la véraison à la vendange (BBCH 84-87). Le classement de saison est indicatif ; le stade est estimé par le modèle.
+
+Rédige un paragraphe court sur le botrytis, commençant exactement par « Botrytis — », dans ce style : phrases courtes, techniques, factuelles, sans emphase ni formule commerciale. Situe le stade, résume la pression accumulée et les conditions des 7 prochains jours (en citant humectation, humidité, température quand c'est pertinent), puis une recommandation proportionnée (jamais d'alarmisme si les données ne le justifient pas). Ne cite pas les noms SEV1, SEV2, SEV3.
+
+Réponds UNIQUEMENT en JSON valide, sans texte autour, avec exactement cette clé : {{"autre": "Botrytis — ..."}}"""
+    try:
+        import requests as _req
+        resp = _req.post("https://api.anthropic.com/v1/messages",
+                         headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                         json={"model": "claude-sonnet-4-5", "max_tokens": 600, "messages": [{"role": "user", "content": prompt}]},
+                         timeout=30)
+        resp.raise_for_status()
+        brut = re.sub(r"^```json\s*|\s*```$", "", resp.json()["content"][0]["text"].strip())
+        return jsonify({"synthese": synthese, "autre": json.loads(brut).get("autre", "")})
+    except Exception as e:
+        return jsonify({"synthese": synthese, "autre": "", "error_ia": f"Erreur de génération : {e}"})
+
 @app.route('/api/epidemio', methods=['GET'])
 def get_epidemio():
     """Analyse épidémiologique mildiou + oïdium basée sur la météo 7 jours"""

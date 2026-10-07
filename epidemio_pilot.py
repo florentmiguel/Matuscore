@@ -25,6 +25,7 @@ L'attribution à Open-Meteo (licence CC BY 4.0) est requise.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import sys
@@ -249,32 +250,44 @@ def score_mildiou(synthese: dict | None) -> int | None:
     return max(0, min(100, int(charge / SEUIL_SCORE_MILDIOU * 100 + 0.5)))   # arrondi au plus proche, 0,5 vers le haut
 
 
+# Jauge oïdium : pression réelle = nouvelles colonies modélisées sur 7 jours (inoculum, météo, stade), sur échelle logarithmique.
+# Bornes calées sur la saison 2026 à Reims : 0 à 0,01 colonie/semaine (mi-mai), 100 au 95e percentile des semaines (≈ 70).
+OIDIUM_BAS, OIDIUM_HAUT = 0.01, 70.0
+
+
 def _jours_jauge(res_oidium: dict | None, now: datetime) -> list[dict]:
     """Jours du moteur oïdium dans la fenêtre de la jauge : aujourd'hui (heure de Paris) et les 6 jours suivants."""
     debut = now.astimezone(TZ_JAUGE).date()
     fin = debut + timedelta(days=6)
     return [d for d in (res_oidium or {}).get("jours") or []
-            if d.get("potentiel_pct") is not None and debut <= date.fromisoformat(d["date"]) <= fin]
+            if d.get("nouvelles_colonies") is not None and debut <= date.fromisoformat(d["date"]) <= fin]
 
 
 def score_oidium(res_oidium: dict | None, now: datetime | None = None) -> int | None:
-    """Score 0-100 de la jauge oïdium : moyenne sur 7 jours du potentiel d'infection journalier du moteur oidium.py
-    (potentiel_pct : température x humidité x eau libre, 0-100). None sans jours exploitables."""
+    """Score 0-100 : somme des nouvelles colonies sur 7 jours, log10 entre OIDIUM_BAS (0) et OIDIUM_HAUT (100). None sans données."""
     jours = _jours_jauge(res_oidium, now or datetime.now(UTC))
     if not jours:
         return None
-    return max(0, min(100, int(sum(d["potentiel_pct"] for d in jours) / len(jours) + 0.5)))
+    total = sum(d["nouvelles_colonies"] for d in jours)
+    if total <= OIDIUM_BAS:
+        return 0
+    v = 100.0 * (math.log10(total) - math.log10(OIDIUM_BAS)) / (math.log10(OIDIUM_HAUT) - math.log10(OIDIUM_BAS))
+    return max(0, min(100, int(v + 0.5)))
 
 
-def tendance_oidium(res_oidium: dict | None, now: datetime | None = None, ecart: float = 10.0) -> str | None:
-    """« en hausse » / « en baisse » si le potentiel moyen des 3 derniers jours de la fenêtre s'écarte d'au moins `ecart` points
-    de celui des 3 premiers, sinon None (stable)."""
+def tendance_oidium(res_oidium: dict | None, now: datetime | None = None, rapport: float = 1.5) -> str | None:
+    """« en hausse » / « en baisse » si les nouvelles colonies des 3 derniers jours de la fenêtre valent au moins `rapport` fois
+    (ou au plus 1/`rapport`) celles des 3 premiers ; sinon None (stable)."""
     jours = _jours_jauge(res_oidium, now or datetime.now(UTC))
     if len(jours) < 6:
         return None
-    a = sum(d["potentiel_pct"] for d in jours[:3]) / 3
-    b = sum(d["potentiel_pct"] for d in jours[-3:]) / 3
-    return "en hausse" if b - a >= ecart else "en baisse" if a - b >= ecart else None
+    a = sum(d["nouvelles_colonies"] for d in jours[:3])
+    b = sum(d["nouvelles_colonies"] for d in jours[-3:])
+    if a <= 1e-12 and b <= 1e-12:
+        return None
+    if a <= 1e-12 or b / a >= rapport:
+        return "en hausse"
+    return "en baisse" if b / a <= 1.0 / rapport else None
 
 
 def synthese_mildiou(res: dict, now: datetime | None = None, passe_j: int = 14, futur_j: int = 7, meta: dict | None = None) -> dict:
@@ -651,18 +664,112 @@ def charger_oidium():
     return oidium
 
 
-def params_oidium() -> dict:
-    """Surcharges du moteur oïdium : variable OIDIUM_PARAMS (JSON), sinon un indice chasmothèces de 95 pour 2026 (aucune estimation
-    de fin 2025 n'existe ; à partir de 2027, l'indice viendra de l'estimation de fin de saison précédente de chaque position)."""
-    brut = os.environ.get("OIDIUM_PARAMS")
-    return json.loads(brut) if brut else {"primaire": {"indice_chasmotheces": 95}}
+# Indice chasmothèces de l'année N (inoculum primaire), par position, d'après la météo de la saison N-1 :
+#   indice = 100 x (C2 / C2_REF) x (PLUIE_REF / pluie d'hiver)
+#   C2    : conditions de formation des chasmothèces à l'automne N-1 (à partir du 15 août : initiation après 8 h sous 13 °C, puis
+#           favorabilité thermique de Legler jusqu'au premier gel d'octobre ou au 15 novembre)
+#   pluie : cumul du 1er novembre N-1 au 31 mars N (lessivage)
+# Hypothèse : maladie de fin de saison au niveau 3 chaque année (100 = sévérité 3) ; seul le climat module l'indice.
+# Références = médianes 2011-2025 à Reims (calage sur l'échelle des indices de début de saison, caler_indice_chasmotheces.py).
+C2_REF, PLUIE_REF = 40.3, 334.0
+JOURS_HIVER = 151                                    # 1er novembre -> 31 mars
+
+
+def formation_chasmotheces(rows: list[dict], saison: int, oi) -> float:
+    """C2 de la saison : intégrale de Legler (jours équivalents à l'optimum) après initiation par le froid."""
+    p = oi.PARAMS
+    pc = p["chasmotheces"]
+    debut = datetime(saison, 8, 15, tzinfo=UTC)
+    fin = datetime(saison, 11, 15, tzinfo=UTC)
+    froid, initie, integ = 0, False, 0.0
+    for r in rows:
+        if not (debut <= r["t"] < fin) or r["temp"] is None:
+            continue
+        T = r["temp"]
+        if r["t"].month >= 10 and T < 0.0:                         # premier gel d'automne : chute des feuilles
+            break
+        if not initie:
+            froid += T < pc["temperature_seuil_froid_c"]
+            initie = froid >= pc["seuil_heures_froid"]
+            continue
+        integ += oi.taux_chasmotheces(T, p) / 24.0
+    return integ
+
+
+def pluie_hiver(rows: list[dict], saison: int, jusqu_a: date) -> tuple[float, bool]:
+    """(pluie du 1er novembre de la saison au 31 mars suivant, provisoire). Si l'hiver n'est pas fini à `jusqu_a`, les jours
+    manquants sont complétés à la pluie médiane journalière (PLUIE_REF / JOURS_HIVER)."""
+    d0, d1 = date(saison, 11, 1), date(saison + 1, 3, 31)
+    fin = min(d1, jusqu_a)
+    total = sum(r["pluie"] or 0.0 for r in rows if d0 <= r["t"].astimezone(TZ_JAUGE).date() <= fin)
+    if fin >= d1:
+        return total, False
+    manquants = (d1 - max(fin, d0 - timedelta(days=1))).days
+    return total + PLUIE_REF / JOURS_HIVER * manquants, True
+
+
+def calcul_indice_chasmotheces(rows: list[dict], annee: int, oi, jusqu_a: date) -> dict:
+    """Indice chasmothèces de l'année `annee` à partir des lignes horaires couvrant le 15/08/annee-1 -> 31/03/annee."""
+    c2 = formation_chasmotheces(rows, annee - 1, oi)
+    pluie, provisoire = pluie_hiver(rows, annee - 1, jusqu_a)
+    indice = 100.0 * (c2 / C2_REF) * (PLUIE_REF / max(1.0, pluie))
+    return {"indice": round(indice, 1), "c2": round(c2, 2), "pluie_hiver": round(pluie, 1), "provisoire": provisoire}
+
+
+def _base_indices():
+    chemin = os.environ.get("DB_PATH") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "vitisens.db")
+    c = sqlite3.connect(chemin, timeout=30)
+    c.execute("""CREATE TABLE IF NOT EXISTS indice_chasmotheces (position TEXT, annee INTEGER, indice REAL, c2 REAL,
+                 pluie_hiver REAL, provisoire INTEGER, calcule_le TEXT, PRIMARY KEY (position, annee))""")
+    return c
+
+
+def indice_chasmotheces(lat, lon, annee: int, now: datetime | None = None, archive=None) -> float | None:
+    """Indice chasmothèces d'une position pour l'année `annee` : lu en base s'il est définitif (ou provisoire de moins de 7 jours),
+    sinon calculé à partir de l'archive Open-Meteo (UN appel : 15/08/annee-1 -> fin de l'hiver ou aujourd'hui - 7 j) et enregistré.
+    `archive(lat, lon, debut, fin)` -> lignes Open-Meteo (injectable pour les tests). None si l'archive est indisponible :
+    pas de valeur par défaut."""
+    now = now or datetime.now(UTC)
+    pos = f"{float(lat):.2f}_{float(lon):.2f}"
+    db = _base_indices()
+    try:
+        row = db.execute("SELECT indice, provisoire, calcule_le FROM indice_chasmotheces WHERE position=? AND annee=?",
+                         (pos, annee)).fetchone()
+        if row and (not row[1] or now - datetime.fromisoformat(row[2]) < timedelta(days=7)):
+            return row[0]
+        oi = charger_oidium()
+        if archive is None:
+            import recuperer_meteo_horaire as rm
+
+            def archive(la, lo, d0, d1):
+                data = rm._get_json(rm.url_archive(la, lo, d0, d1))
+                return [{"time": t, **v} for t, v in sorted(rm._lignes(data).items())]
+        jusqu_a = min(date(annee, 3, 31), now.date() - timedelta(days=7))
+        try:
+            lignes = archive(float(lat), float(lon), date(annee - 1, 8, 15), jusqu_a)
+        except Exception as e:                                       # noqa: BLE001
+            print(f"[indice chasmothèces] archive indisponible ({pos}, {annee}) : {e}", file=sys.stderr)
+            return row[0] if row else None
+        r = calcul_indice_chasmotheces(lignes_vers_rows(lignes), annee, oi, jusqu_a)
+        db.execute("INSERT OR REPLACE INTO indice_chasmotheces VALUES (?,?,?,?,?,?,?)",
+                   (pos, annee, r["indice"], r["c2"], r["pluie_hiver"], int(r["provisoire"]), now.isoformat()))
+        db.commit()
+        return r["indice"]
+    finally:
+        db.close()
+
+
+def params_oidium(indice: float) -> dict:
+    """Surcharges du moteur oïdium : l'indice chasmothèces de la position (inoculum primaire)."""
+    return {"primaire": {"indice_chasmotheces": indice}}
 
 
 def jauge_position(lat, lon, now: datetime | None = None, get=None) -> dict:
     """Scores et tendances de la jauge pour UNE position : moteur mildiou et moteur oidium.py sur la même série météo horaire.
     Chaque maladie est calculée indépendamment : l'échec de l'une laisse l'autre. NE LÈVE JAMAIS."""
     now = now or datetime.now(UTC)
-    out = {"score_mildiou": None, "tendance_mildiou": None, "score_oidium": None, "tendance_oidium": None}
+    out = {"score_mildiou": None, "tendance_mildiou": None, "score_oidium": None, "tendance_oidium": None,
+           "indice_chasmotheces": None}
     try:
         lignes, infos = serie_horaire(lat, lon, now, get)
         rows = lignes_vers_rows(lignes)
@@ -678,7 +785,11 @@ def jauge_position(lat, lon, now: datetime | None = None, get=None) -> dict:
     except Exception as e:                                          # noqa: BLE001
         print(f"[jauge] mildiou non calculé ({lat}, {lon}) : {e}", file=sys.stderr)
     try:
-        res_o = charger_oidium().calculer_saison(rows, params_oidium(), now=now)
+        indice = indice_chasmotheces(lat, lon, now.astimezone(TZ_JAUGE).year, now=now)
+        out["indice_chasmotheces"] = indice
+        if indice is None:
+            raise RuntimeError("indice chasmothèces indisponible (archive météo) : pas de valeur par défaut")
+        res_o = charger_oidium().calculer_saison(rows, params_oidium(indice), now=now)
         out["score_oidium"] = score_oidium(res_o, now)
         out["tendance_oidium"] = tendance_oidium(res_o, now)
     except Exception as e:                                          # noqa: BLE001
@@ -705,6 +816,60 @@ def jauges_clients(clients: list[dict], now: datetime | None = None, get=None, g
             ligne["source_position"] = pos["source"]
         lignes.append(ligne)
     return lignes
+
+
+# ---------------------------------------------------------------------------
+# Botrytis : aide à la rédaction du bulletin (admin uniquement, jamais affiché au client)
+# ---------------------------------------------------------------------------
+SEUIL_JOUR_BOTRYTIS = 0.01          # risque journalier (ris1 + ris2 + ris3) au-delà duquel un jour est signalé
+
+
+def phenologie_botrytis(rows: list[dict], annee: int) -> tuple[dict, date, bool]:
+    """({jour: BBCH}, débourrement, recalé). Débourrement : variable BOTRYTIS_DEBOURREMENT (AAAA-MM-JJ, à renseigner chaque
+    printemps), sinon 15 avril. Stades observés : stades_bsv_<année>.csv du dépôt epidemio s'il existe (recalage)."""
+    charger_moteur()
+    import phenologie as phen
+    brut = os.environ.get("BOTRYTIS_DEBOURREMENT", "")
+    deb = date.fromisoformat(brut) if brut.startswith(str(annee)) else date(annee, 4, 15)
+    obs = {}
+    chemin = os.path.join(chemin_moteur(), f"stades_bsv_{annee}.csv")
+    if os.path.exists(chemin):
+        obs = {k: v for k, v in phen.lire_stades(chemin).items() if date.fromisoformat(k) >= deb}
+    rows_an = [r for r in rows if r["t"].astimezone(TZ_JAUGE).year == annee]
+    try:
+        return phen.serie_bbch(rows_an, deb, TZ_JAUGE, obs or None), deb, bool(obs)
+    except ValueError:                                              # observation hors de la série : phénologie non recalée
+        return phen.serie_bbch(rows_an, deb, TZ_JAUGE, None), deb, False
+
+
+def synthese_botrytis(lat=None, lon=None, now: datetime | None = None, get=None) -> dict:
+    """Synthèse du moteur botrytis (González-Domínguez et al. 2015, version corrigée VITI Sens) pour la rédaction du bulletin :
+    sévérités cumulées, classement de la saison, stade estimé, jours à risque des 7 prochains jours."""
+    lat = 49.25 if lat is None else float(lat)
+    lon = 3.96 if lon is None else float(lon)
+    now = now or datetime.now(UTC)
+    aujourd = now.astimezone(TZ_JAUGE).date()
+    lignes, infos = serie_horaire(lat, lon, now, get)
+    rows = lignes_vers_rows(lignes)
+    bbch, deb, recale = phenologie_botrytis(rows, aujourd.year)
+    charger_moteur()
+    import botrytis as bo
+    res = bo.calculer_saison(rows, bbch, TZ_JAUGE)
+    cl = res.get("classification") or {}
+    fin = aujourd + timedelta(days=6)
+    jours = [{"date": d["date"], "fenetre": d["fenetre"], "bbch": d["bbch"], "tmoy": d["tmoy"], "hr": d["hr"], "humectation_h": d["wd"],
+              "risque": round(d["ris1"] + d["ris2"] + d["ris3"], 3), "previsionnel": d["date"] > aujourd.isoformat()}
+             for d in res["jours"] if aujourd.isoformat() <= d["date"] <= fin.isoformat()]
+    stade = bbch.get(aujourd)
+    return {
+        "classe_saison": cl.get("classe"),
+        "probabilites": {k: round(v * 100) for k, v in (cl.get("probabilites") or {}).items()},
+        "sev1_floraison": res["sev1"], "sev2_fermeture": res["sev2"], "sev3_maturite": res["sev3"],
+        "stade_bbch": round(stade, 1) if stade is not None else None,
+        "debourrement": deb.isoformat(), "phenologie_recalee_bsv": recale,
+        "jours_a_risque_7j": [j for j in jours if j["risque"] >= SEUIL_JOUR_BOTRYTIS],
+        "avertissements": res.get("avertissements", []) + (["météo périmée"] if infos.get("meteo_perimee") else []),
+    }
 
 
 def lire_clients(db_path: str | None = None) -> list[dict]:

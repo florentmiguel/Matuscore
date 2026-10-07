@@ -463,9 +463,9 @@ class TestScoresJauge(unittest.TestCase):
 
 
 
-def _res_oidium(potentiels, debut="2026-10-05"):
+def _res_oidium(colonies, debut="2026-10-05"):
     d0 = date.fromisoformat(debut)
-    return {"jours": [{"date": (d0 + timedelta(days=k)).isoformat(), "potentiel_pct": v} for k, v in enumerate(potentiels)]}
+    return {"jours": [{"date": (d0 + timedelta(days=k)).isoformat(), "nouvelles_colonies": v} for k, v in enumerate(colonies)]}
 
 
 class TestScoreOidiumMoteur(unittest.TestCase):
@@ -473,26 +473,92 @@ class TestScoreOidiumMoteur(unittest.TestCase):
         r = ep.lignes_vers_rows([{"time": "2026-10-05T12:00", "temperature_2m": 15, "relative_humidity_2m": 70, "dew_point_2m": 9,
                                   "precipitation": 0, "wind_speed_10m": 3.2, "shortwave_radiation": 410}])[0]
         self.assertEqual((r["vent"], r["rayonnement"]), (3.2, 410.0))
-        r = ep.lignes_vers_rows([{"time": "2026-10-05T12:00", "temperature_2m": 15}])[0]
-        self.assertIsNone(r["vent"]); self.assertIsNone(r["rayonnement"])
 
-    def test_moyenne_sur_7_jours_a_partir_d_aujourd_hui(self):
-        res = _res_oidium([90, 10, 20, 30, 40, 50, 60, 70, 99], debut="2026-10-04")   # le 04/10 (hier) et le 9e jour sont exclus
-        self.assertEqual(ep.score_oidium(res, NOW), 40)
+    def test_echelle_logarithmique(self):
+        self.assertEqual(ep.score_oidium(_res_oidium([0.001] * 7), NOW), 0)              # <= 0,01 : 0
+        self.assertEqual(ep.score_oidium(_res_oidium([10.0] * 7), NOW), 100)             # 70 : 100
+        self.assertEqual(ep.score_oidium(_res_oidium([0.5, 0.5, 0, 0, 0, 0, 0]), NOW), 52)  # 1 colonie : 100 x 2 / 3,845
+        self.assertEqual(ep.score_oidium(_res_oidium([9, 1, 2, 3, 4, 5, 6, 0, 99], debut="2026-10-04"), NOW),  # hier et J+7 exclus
+                         ep.score_oidium(_res_oidium([1, 2, 3, 4, 5, 6, 0]), NOW))
 
     def test_sans_donnees(self):
         self.assertIsNone(ep.score_oidium(None, NOW))
         self.assertIsNone(ep.score_oidium({"jours": []}, NOW))
 
     def test_tendance(self):
-        self.assertEqual(ep.tendance_oidium(_res_oidium([10, 10, 10, 20, 30, 30, 30]), NOW), "en hausse")
-        self.assertEqual(ep.tendance_oidium(_res_oidium([40, 40, 40, 35, 25, 25, 25]), NOW), "en baisse")
-        self.assertIsNone(ep.tendance_oidium(_res_oidium([20] * 7), NOW))
+        self.assertEqual(ep.tendance_oidium(_res_oidium([1, 1, 1, 1, 2, 2, 2]), NOW), "en hausse")
+        self.assertEqual(ep.tendance_oidium(_res_oidium([3, 3, 3, 2, 1, 1, 1]), NOW), "en baisse")
+        self.assertIsNone(ep.tendance_oidium(_res_oidium([1] * 7), NOW))
+        self.assertIsNone(ep.tendance_oidium(_res_oidium([0] * 7), NOW))
+
+
+class TestIndiceChasmotheces(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._env = os.environ.get("DB_PATH")
+        os.environ["DB_PATH"] = os.path.join(self.tmp, "t.db")
+        self.appels = []
+
+    def tearDown(self):
+        if self._env is None:
+            os.environ.pop("DB_PATH", None)
+        else:
+            os.environ["DB_PATH"] = self._env
+
+    def archive(self, temp_aut=20.0, pluie_h=334.0 / 151 / 24):
+        def f(lat, lon, d0, d1):
+            self.appels.append((d0, d1))
+            out, t = [], datetime(d0.year, d0.month, d0.day)
+            while t.date() <= d1:
+                hiver = t.month in (11, 12, 1, 2, 3)
+                out.append({"time": t.strftime("%Y-%m-%dT%H:%M"), "temperature_2m": 5.0 if hiver else (temp_aut if t.hour > 2 else 12.0),
+                            "relative_humidity_2m": 80, "dew_point_2m": 3, "precipitation": pluie_h if hiver else 0.0})
+                t += timedelta(hours=1)
+            return out
+        return f
+
+    def test_formule_et_cache(self):
+        maintenant = datetime(2027, 5, 1, tzinfo=UTC)
+        i1 = ep.indice_chasmotheces(49.25, 3.96, 2027, now=maintenant, archive=self.archive())
+        self.assertGreater(i1, 0)
+        self.assertEqual(self.appels, [(date(2026, 8, 15), date(2027, 3, 31))])        # un seul appel, hiver complet
+        i2 = ep.indice_chasmotheces(49.25, 3.96, 2027, now=maintenant, archive=self.archive())
+        self.assertEqual((i2, len(self.appels)), (i1, 1))                                # définitif : relu en base, aucun appel
+
+    def test_hiver_pluvieux_reduit_l_indice(self):
+        m = datetime(2027, 5, 1, tzinfo=UTC)
+        sec = ep.indice_chasmotheces(49.25, 3.96, 2027, now=m, archive=self.archive(pluie_h=0.05))
+        humide = ep.indice_chasmotheces(48.00, 4.00, 2027, now=m, archive=self.archive(pluie_h=0.2))
+        self.assertAlmostEqual(sec / humide, 4.0, delta=0.05)
+
+    def test_automne_froid_reduit_l_indice(self):
+        m = datetime(2027, 5, 1, tzinfo=UTC)
+        chaud = ep.indice_chasmotheces(49.25, 3.96, 2027, now=m, archive=self.archive(temp_aut=20.0))
+        froid = ep.indice_chasmotheces(48.00, 4.00, 2027, now=m, archive=self.archive(temp_aut=11.0))
+        self.assertLess(froid, chaud / 3)
+
+    def test_hiver_en_cours_provisoire_puis_recalcule(self):
+        jan = datetime(2027, 1, 20, tzinfo=UTC)
+        ep.indice_chasmotheces(49.25, 3.96, 2027, now=jan, archive=self.archive())
+        self.assertEqual(self.appels[-1][1], date(2027, 1, 13))                          # archive jusqu'à aujourd'hui - 7 j
+        ep.indice_chasmotheces(49.25, 3.96, 2027, now=jan + timedelta(days=2), archive=self.archive())
+        self.assertEqual(len(self.appels), 1)                                            # provisoire récent : relu
+        ep.indice_chasmotheces(49.25, 3.96, 2027, now=jan + timedelta(days=8), archive=self.archive())
+        self.assertEqual(len(self.appels), 2)                                            # provisoire > 7 j : recalculé
+
+    def test_archive_indisponible_sans_valeur_par_defaut(self):
+        def panne(*a):
+            raise RuntimeError("réseau")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertIsNone(ep.indice_chasmotheces(49.25, 3.96, 2027, now=datetime(2027, 5, 1, tzinfo=UTC), archive=panne))
 
 
 class TestJaugesClients(unittest.TestCase):
     def setUp(self):
-        self._orig = (ep.serie_horaire, ep.charger_moteur, ep.charger_oidium, ep.synthese_mildiou, ep.resoudre_position)
+        self._orig = (ep.serie_horaire, ep.charger_moteur, ep.charger_oidium, ep.synthese_mildiou, ep.resoudre_position,
+                      ep.indice_chasmotheces)
+        self.indice = 80.0
+        ep.indice_chasmotheces = lambda lat, lon, annee, now=None, archive=None: self.indice
         self.appels = []
 
         def serie(lat, lon, now=None, get=None):
@@ -512,7 +578,8 @@ class TestJaugesClients(unittest.TestCase):
             def calculer_saison(rows, params=None, now=None):
                 if not test.oidium_ok:
                     raise RuntimeError("panne")
-                return _res_oidium([20, 20, 20, 30, 40, 40, 40])
+                test.params_recus = params
+                return _res_oidium([0.1, 0.1, 0.1, 0.2, 0.3, 0.3, 0.3])
         ep.charger_oidium = lambda: OI
         ep.synthese_mildiou = lambda res, now=None, meta=None: {"tendance": {"libelle": "PRESSION EN BAISSE", "charge_prevue_dh": 260.0}}
         pos = {"c1": {"lat": 49.13, "lon": 4.16, "source": "client", "commune": "Verzenay"},
@@ -520,14 +587,17 @@ class TestJaugesClients(unittest.TestCase):
         ep.resoudre_position = lambda cl, get_json=None, now=None: pos.get(cl["id"])
 
     def tearDown(self):
-        ep.serie_horaire, ep.charger_moteur, ep.charger_oidium, ep.synthese_mildiou, ep.resoudre_position = self._orig
+        (ep.serie_horaire, ep.charger_moteur, ep.charger_oidium, ep.synthese_mildiou, ep.resoudre_position,
+         ep.indice_chasmotheces) = self._orig
 
     def test_scores_locaux_et_calcul_partage_par_position(self):
         lignes = ep.jauges_clients([{"id": "c1", "commune": "Verzenay"}, {"id": "c2", "commune": "Verzenay"}], now=NOW)
         self.assertEqual(len(self.appels), 1)
         l = lignes[0]
         self.assertEqual((l["score_mildiou"], l["tendance_mildiou"]), (65, "en baisse"))
-        self.assertEqual((l["score_oidium"], l["tendance_oidium"]), (30, "en hausse"))
+        self.assertEqual((l["score_oidium"], l["tendance_oidium"]), (56, "en hausse"))
+        self.assertEqual(self.params_recus, {"primaire": {"indice_chasmotheces": 80.0}})
+        self.assertEqual(l["indice_chasmotheces"], 80.0)
         self.assertEqual(lignes[1]["source_position"], "geocodage")
 
     def test_client_non_localise_sans_score(self):
@@ -535,12 +605,44 @@ class TestJaugesClients(unittest.TestCase):
         self.assertIsNone(l["score_mildiou"]); self.assertIsNone(l["score_oidium"])
         self.assertEqual(self.appels, [])
 
+    def test_sans_indice_pas_de_score_oidium(self):
+        self.indice = None
+        with contextlib.redirect_stderr(io.StringIO()):
+            l = ep.jauges_clients([{"id": "c1", "commune": "Verzenay"}], now=NOW)[0]
+        self.assertEqual(l["score_mildiou"], 65)
+        self.assertIsNone(l["score_oidium"])
+
     def test_oidium_en_echec_n_empeche_pas_le_mildiou(self):
         self.oidium_ok = False
         with contextlib.redirect_stderr(io.StringIO()):
             l = ep.jauges_clients([{"id": "c1", "commune": "Verzenay"}], now=NOW)[0]
         self.assertEqual(l["score_mildiou"], 65)
         self.assertIsNone(l["score_oidium"])
+
+
+class TestSyntheseBotrytis(unittest.TestCase):
+    def test_synthese_sur_serie_reelle_du_moteur(self):
+        """Série horaire synthétique d'une saison : la synthèse sort un classement, un stade et les jours des 7 prochains jours."""
+        import math as m
+        t0, maintenant = datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 7, 20, 12, tzinfo=UTC)
+        lignes = []
+        for h in range(int((maintenant - t0).total_seconds() // 3600) + 24 * 8):
+            t = t0 + timedelta(hours=h); doy = t.timetuple().tm_yday
+            T = 11 + 9 * m.sin((doy - 110) / 365 * 2 * m.pi) + 5 * m.sin((t.hour - 9) / 24 * 2 * m.pi)
+            lignes.append({"time": t.strftime("%Y-%m-%dT%H:%M"), "temperature_2m": round(T, 1), "relative_humidity_2m": 96 if t.hour < 8 else 70,
+                           "dew_point_2m": round(T - 3, 1), "precipitation": 0.5 if doy % 5 == 0 and t.hour < 3 else 0.0})
+        orig = ep.serie_horaire
+        ep.serie_horaire = lambda lat, lon, now=None, get=None: (lignes, {"meteo_perimee": False})
+        try:
+            s = ep.synthese_botrytis(49.25, 3.96, now=maintenant)
+        finally:
+            ep.serie_horaire = orig
+        self.assertIn(s["classe_saison"], ("faible", "intermediaire", "severe"))
+        self.assertIsNotNone(s["stade_bbch"])
+        self.assertGreater(s["sev1_floraison"], 0)
+        for j in s["jours_a_risque_7j"]:
+            self.assertTrue("2026-07-20" <= j["date"] <= "2026-07-26")
+            self.assertGreaterEqual(j["risque"], ep.SEUIL_JOUR_BOTRYTIS)
 
 
 class TestConsigne(unittest.TestCase):
