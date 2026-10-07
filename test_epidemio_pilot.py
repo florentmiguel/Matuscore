@@ -15,7 +15,7 @@ import tempfile
 import types
 import unittest
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
 os.environ.setdefault("EPIDEMIO_PATH", os.path.expanduser("~/epidemio"))
@@ -461,15 +461,86 @@ class TestScoresJauge(unittest.TestCase):
         self.assertIsNone(ep.score_mildiou(None))
         self.assertIsNone(ep.score_mildiou({}))
 
-    def test_score_oidium_moyenne_des_scores(self):
-        jours = [{"risque": "Modéré", "score": s} for s in (20, 30, 40, 50, 60, 70, 80)]
-        self.assertEqual(ep.score_oidium({"risques_oidium": jours}), 50)
 
-    def test_score_oidium_ignore_les_scores_absents_et_borne(self):
-        self.assertEqual(ep.score_oidium({"risques_oidium": [{"score": None}, {"score": 40}]}), 40)
-        self.assertEqual(ep.score_oidium({"risques_oidium": [{"score": 140}]}), 100)
-        self.assertIsNone(ep.score_oidium({"risques_oidium": []}))
-        self.assertIsNone(ep.score_oidium(None))
+
+def _res_oidium(potentiels, debut="2026-10-05"):
+    d0 = date.fromisoformat(debut)
+    return {"jours": [{"date": (d0 + timedelta(days=k)).isoformat(), "potentiel_pct": v} for k, v in enumerate(potentiels)]}
+
+
+class TestScoreOidiumMoteur(unittest.TestCase):
+    def test_vent_et_rayonnement_transmis_au_moteur(self):
+        r = ep.lignes_vers_rows([{"time": "2026-10-05T12:00", "temperature_2m": 15, "relative_humidity_2m": 70, "dew_point_2m": 9,
+                                  "precipitation": 0, "wind_speed_10m": 3.2, "shortwave_radiation": 410}])[0]
+        self.assertEqual((r["vent"], r["rayonnement"]), (3.2, 410.0))
+        r = ep.lignes_vers_rows([{"time": "2026-10-05T12:00", "temperature_2m": 15}])[0]
+        self.assertIsNone(r["vent"]); self.assertIsNone(r["rayonnement"])
+
+    def test_moyenne_sur_7_jours_a_partir_d_aujourd_hui(self):
+        res = _res_oidium([90, 10, 20, 30, 40, 50, 60, 70, 99], debut="2026-10-04")   # le 04/10 (hier) et le 9e jour sont exclus
+        self.assertEqual(ep.score_oidium(res, NOW), 40)
+
+    def test_sans_donnees(self):
+        self.assertIsNone(ep.score_oidium(None, NOW))
+        self.assertIsNone(ep.score_oidium({"jours": []}, NOW))
+
+    def test_tendance(self):
+        self.assertEqual(ep.tendance_oidium(_res_oidium([10, 10, 10, 20, 30, 30, 30]), NOW), "en hausse")
+        self.assertEqual(ep.tendance_oidium(_res_oidium([40, 40, 40, 35, 25, 25, 25]), NOW), "en baisse")
+        self.assertIsNone(ep.tendance_oidium(_res_oidium([20] * 7), NOW))
+
+
+class TestJaugesClients(unittest.TestCase):
+    def setUp(self):
+        self._orig = (ep.serie_horaire, ep.charger_moteur, ep.charger_oidium, ep.synthese_mildiou, ep.resoudre_position)
+        self.appels = []
+
+        def serie(lat, lon, now=None, get=None):
+            self.appels.append((lat, lon))
+            return [], {}
+        ep.serie_horaire = serie
+
+        class MP:
+            calculer_saison = staticmethod(lambda rows, lat, lon, params=None, now=None: {})
+            charger_profil = staticmethod(lambda nom: {})
+        ep.charger_moteur = lambda: (MP, None)
+        self.oidium_ok = True
+
+        test = self
+        class OI:
+            @staticmethod
+            def calculer_saison(rows, params=None, now=None):
+                if not test.oidium_ok:
+                    raise RuntimeError("panne")
+                return _res_oidium([20, 20, 20, 30, 40, 40, 40])
+        ep.charger_oidium = lambda: OI
+        ep.synthese_mildiou = lambda res, now=None, meta=None: {"tendance": {"libelle": "PRESSION EN BAISSE", "charge_prevue_dh": 260.0}}
+        pos = {"c1": {"lat": 49.13, "lon": 4.16, "source": "client", "commune": "Verzenay"},
+               "c2": {"lat": 49.131, "lon": 4.161, "source": "geocodage", "commune": "Verzenay"}}
+        ep.resoudre_position = lambda cl, get_json=None, now=None: pos.get(cl["id"])
+
+    def tearDown(self):
+        ep.serie_horaire, ep.charger_moteur, ep.charger_oidium, ep.synthese_mildiou, ep.resoudre_position = self._orig
+
+    def test_scores_locaux_et_calcul_partage_par_position(self):
+        lignes = ep.jauges_clients([{"id": "c1", "commune": "Verzenay"}, {"id": "c2", "commune": "Verzenay"}], now=NOW)
+        self.assertEqual(len(self.appels), 1)
+        l = lignes[0]
+        self.assertEqual((l["score_mildiou"], l["tendance_mildiou"]), (65, "en baisse"))
+        self.assertEqual((l["score_oidium"], l["tendance_oidium"]), (30, "en hausse"))
+        self.assertEqual(lignes[1]["source_position"], "geocodage")
+
+    def test_client_non_localise_sans_score(self):
+        l = ep.jauges_clients([{"id": "c9", "commune": "Inconnue"}], now=NOW)[0]
+        self.assertIsNone(l["score_mildiou"]); self.assertIsNone(l["score_oidium"])
+        self.assertEqual(self.appels, [])
+
+    def test_oidium_en_echec_n_empeche_pas_le_mildiou(self):
+        self.oidium_ok = False
+        with contextlib.redirect_stderr(io.StringIO()):
+            l = ep.jauges_clients([{"id": "c1", "commune": "Verzenay"}], now=NOW)[0]
+        self.assertEqual(l["score_mildiou"], 65)
+        self.assertIsNone(l["score_oidium"])
 
 
 class TestConsigne(unittest.TestCase):

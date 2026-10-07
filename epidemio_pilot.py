@@ -32,10 +32,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 UTC = timezone.utc
 PROFIL = os.environ.get("EPIDEMIO_PROFIL", "calage_2026")
+TZ_JAUGE = ZoneInfo("Europe/Paris")
 COORDS_DEFAUT = {"lat": float(os.environ.get("EPIDEMIO_LAT", "49.25")), "lon": float(os.environ.get("EPIDEMIO_LON", "3.96"))}
 
 # Bandes d'intensité de l'infection (°C·h), reprises des seuils de la carte de risque de Plasmopy : 50 / 100 / 200
@@ -89,14 +91,17 @@ def _flottant(v):
 
 
 def lignes_vers_rows(lignes: list[dict]) -> list[dict]:
-    """Lignes d'Open-Meteo (time, temperature_2m, relative_humidity_2m, dew_point_2m, precipitation) vers les lignes
+    """Lignes d'Open-Meteo (time, temperature_2m, relative_humidity_2m, dew_point_2m, precipitation, wind_speed_10m,
+    shortwave_radiation) vers les lignes
     du moteur. Mêmes règles que le chargement d'un CSV : heures en UTC, valeurs absentes = None."""
     rows = []
     for r in lignes:
         t = datetime.fromisoformat(str(r["time"]).strip())
         t = t.replace(tzinfo=UTC) if t.tzinfo is None else t.astimezone(UTC)
         rows.append({"t": t, "temp": _flottant(r.get("temperature_2m")), "hr": _flottant(r.get("relative_humidity_2m")),
-                     "pluie": _flottant(r.get("precipitation")), "rosee": _flottant(r.get("dew_point_2m")), "mouille": None})
+                     "pluie": _flottant(r.get("precipitation")), "rosee": _flottant(r.get("dew_point_2m")), "mouille": None,
+                     # facultatifs, utilisés par le moteur oïdium : vent à 10 m (m/s) et rayonnement global (W/m², proxy des UV)
+                     "vent": _flottant(r.get("wind_speed_10m")), "rayonnement": _flottant(r.get("shortwave_radiation"))})
     rows.sort(key=lambda x: x["t"])
     return rows
 
@@ -244,12 +249,32 @@ def score_mildiou(synthese: dict | None) -> int | None:
     return max(0, min(100, int(charge / SEUIL_SCORE_MILDIOU * 100 + 0.5)))   # arrondi au plus proche, 0,5 vers le haut
 
 
-def score_oidium(synthese_ancienne: dict | None) -> int | None:
-    """Score 0-100 de la jauge oïdium : moyenne des scores journaliers (0-100) de l'ancien modèle sur ses 7 jours, ou None."""
-    scores = [j.get("score") for j in (synthese_ancienne or {}).get("risques_oidium") or [] if j.get("score") is not None]
-    if not scores:
+def _jours_jauge(res_oidium: dict | None, now: datetime) -> list[dict]:
+    """Jours du moteur oïdium dans la fenêtre de la jauge : aujourd'hui (heure de Paris) et les 6 jours suivants."""
+    debut = now.astimezone(TZ_JAUGE).date()
+    fin = debut + timedelta(days=6)
+    return [d for d in (res_oidium or {}).get("jours") or []
+            if d.get("potentiel_pct") is not None and debut <= date.fromisoformat(d["date"]) <= fin]
+
+
+def score_oidium(res_oidium: dict | None, now: datetime | None = None) -> int | None:
+    """Score 0-100 de la jauge oïdium : moyenne sur 7 jours du potentiel d'infection journalier du moteur oidium.py
+    (potentiel_pct : température x humidité x eau libre, 0-100). None sans jours exploitables."""
+    jours = _jours_jauge(res_oidium, now or datetime.now(UTC))
+    if not jours:
         return None
-    return max(0, min(100, int(sum(scores) / len(scores) + 0.5)))
+    return max(0, min(100, int(sum(d["potentiel_pct"] for d in jours) / len(jours) + 0.5)))
+
+
+def tendance_oidium(res_oidium: dict | None, now: datetime | None = None, ecart: float = 10.0) -> str | None:
+    """« en hausse » / « en baisse » si le potentiel moyen des 3 derniers jours de la fenêtre s'écarte d'au moins `ecart` points
+    de celui des 3 premiers, sinon None (stable)."""
+    jours = _jours_jauge(res_oidium, now or datetime.now(UTC))
+    if len(jours) < 6:
+        return None
+    a = sum(d["potentiel_pct"] for d in jours[:3]) / 3
+    b = sum(d["potentiel_pct"] for d in jours[-3:]) / 3
+    return "en hausse" if b - a >= ecart else "en baisse" if a - b >= ecart else None
 
 
 def synthese_mildiou(res: dict, now: datetime | None = None, passe_j: int = 14, futur_j: int = 7, meta: dict | None = None) -> dict:
@@ -610,6 +635,76 @@ def bloc_commune_pour_client(client: dict, now: datetime | None = None, get=None
     except Exception as e:                                          # noqa: BLE001
         print(f"[epidemio] bloc commune indisponible : {e}", file=sys.stderr)
         return None
+
+
+TENDANCE_JAUGE = {"PRESSION EN HAUSSE": "en hausse", "PRESSION EN BAISSE": "en baisse", "PRESSION STABLE": "stable",
+                  "PRESSION FAIBLE": None}
+
+
+def charger_oidium():
+    """Module oidium.py du dépôt epidemio (même dossier que le moteur mildiou)."""
+    charger_moteur()                                   # ajoute le dossier au sys.path (ou lève MoteurIndisponible)
+    try:
+        import oidium
+    except Exception as e:                                          # noqa: BLE001
+        raise MoteurIndisponible(message_moteur_introuvable(chemin_moteur(), e)) from e
+    return oidium
+
+
+def params_oidium() -> dict:
+    """Surcharges du moteur oïdium : variable OIDIUM_PARAMS (JSON), sinon un indice chasmothèces de 95 pour 2026 (aucune estimation
+    de fin 2025 n'existe ; à partir de 2027, l'indice viendra de l'estimation de fin de saison précédente de chaque position)."""
+    brut = os.environ.get("OIDIUM_PARAMS")
+    return json.loads(brut) if brut else {"primaire": {"indice_chasmotheces": 95}}
+
+
+def jauge_position(lat, lon, now: datetime | None = None, get=None) -> dict:
+    """Scores et tendances de la jauge pour UNE position : moteur mildiou et moteur oidium.py sur la même série météo horaire.
+    Chaque maladie est calculée indépendamment : l'échec de l'une laisse l'autre. NE LÈVE JAMAIS."""
+    now = now or datetime.now(UTC)
+    out = {"score_mildiou": None, "tendance_mildiou": None, "score_oidium": None, "tendance_oidium": None}
+    try:
+        lignes, infos = serie_horaire(lat, lon, now, get)
+        rows = lignes_vers_rows(lignes)
+    except Exception as e:                                          # noqa: BLE001
+        print(f"[jauge] météo indisponible ({lat}, {lon}) : {e}", file=sys.stderr)
+        return out
+    try:
+        mp, _ = charger_moteur()
+        res = mp.calculer_saison(rows, float(lat), float(lon), params=mp.charger_profil(PROFIL), now=now)
+        syn = synthese_mildiou(res, now=now, meta={"profil": PROFIL, **infos})
+        out["score_mildiou"] = score_mildiou(syn)
+        out["tendance_mildiou"] = TENDANCE_JAUGE.get(syn["tendance"]["libelle"])
+    except Exception as e:                                          # noqa: BLE001
+        print(f"[jauge] mildiou non calculé ({lat}, {lon}) : {e}", file=sys.stderr)
+    try:
+        res_o = charger_oidium().calculer_saison(rows, params_oidium(), now=now)
+        out["score_oidium"] = score_oidium(res_o, now)
+        out["tendance_oidium"] = tendance_oidium(res_o, now)
+    except Exception as e:                                          # noqa: BLE001
+        print(f"[jauge] oïdium non calculé ({lat}, {lon}) : {e}", file=sys.stderr)
+    return out
+
+
+def jauges_clients(clients: list[dict], now: datetime | None = None, get=None, get_json=None) -> list[dict]:
+    """Une ligne par client pour la table jauge_client. Les clients d'une même position partagent un calcul. Un client non localisable
+    a une ligne sans score (le portail affiche alors « jauge indisponible ») : jamais de repli sur une valeur régionale."""
+    now = now or datetime.now(UTC)
+    calcule_le = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    cache, lignes = {}, []
+    for cl in clients:
+        ligne = {"id_client": cl.get("id"), "commune": (cl.get("commune") or "").strip() or None, "source_position": None,
+                 "score_mildiou": None, "tendance_mildiou": None, "score_oidium": None, "tendance_oidium": None,
+                 "calcule_le": calcule_le}
+        pos = resoudre_position(cl, get_json, now)
+        if pos:
+            cle = f"{pos['lat']:.2f}_{pos['lon']:.2f}"
+            if cle not in cache:
+                cache[cle] = jauge_position(pos["lat"], pos["lon"], now=now, get=get)
+            ligne.update(cache[cle])
+            ligne["source_position"] = pos["source"]
+        lignes.append(ligne)
+    return lignes
 
 
 def lire_clients(db_path: str | None = None) -> list[dict]:

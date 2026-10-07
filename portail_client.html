@@ -85,6 +85,8 @@ textarea{min-height:60px}
 .jg-zo{font-size:13px;font-weight:700;margin-top:4px}
 .jg-ph{font-size:12.5px;color:#374151;margin-top:3px}
 .jg-nt{font-size:10.5px;color:var(--gr);margin-top:6px}
+.jg-co{font-size:12px;color:var(--gm);font-weight:600;margin-top:4px}
+.jg-off{color:var(--gr);font-size:12.5px;padding:14px}
 .al-g{background:#E8F5E9;color:#2E7D32}.al-o{background:#FFF3E0;color:#E65100}.al-r{background:#FFEBEE;color:#C62828}.al-b{background:#E3F2FD;color:#1565C0}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .field-label{font-size:11px;color:var(--gr);display:block;margin-bottom:3px}
@@ -869,29 +871,21 @@ function showTab(name){
  showSubTab(mega, name);
 }
 
-// --- Jauge de pression cryptogamique : score 0-100 enregistré avec le bulletin (score_mildiou / score_oidium) ---
+// --- Jauge de pression cryptogamique : scores 0-100 de la commune du client (DATA.jauge, recalculés chaque jour) ---
 const JAUGE_ZONES=[[33,'Pression faible','#40916C'],[66,'Pression modérée','#E07A1F'],[100,'Pression élevée','#C1121F']];
 let JAUGE_MALADIE='mildiou';
 function jaugeEsc(t){return String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function jaugeZone(v){return JAUGE_ZONES.find(z=>v<=z[0])||JAUGE_ZONES[2]}
-function jaugeTendance(txt){
- // 1re ligne de l'analyse (« RISQUE MILDIOU — PRESSION EN BAISSE », « RISQUE OÏDIUM — PRESSION MODÉRÉE ET EN HAUSSE ») -> « en baisse »
- const l=String(txt||'').split('\n')[0];
- if(!/^\s*RISQUE/i.test(l)) return '';
- const m=l.match(/EN HAUSSE|EN BAISSE|STABLE/i);
- return m?m[0].toLowerCase():'';
-}
-function jaugeHTML(b){
- const dispo=['mildiou','oidium'].filter(m=>Number.isFinite(b['score_'+m]));
- if(!dispo.length) return '';
+function jaugeHTML(){
+ const J=DATA.jauge;
+ const dispo=J?['mildiou','oidium'].filter(m=>Number.isFinite(J['score_'+m])):[];
+ if(!dispo.length) return `<div class="jg jg-off">📍 Jauge indisponible : la commune de votre exploitation n'a pas pu être située.</div>`;
  if(!dispo.includes(JAUGE_MALADIE)) JAUGE_MALADIE=dispo[0];
- const m=JAUGE_MALADIE, v=Math.max(0,Math.min(100,Math.round(b['score_'+m]))), z=jaugeZone(v);
- const tend=jaugeTendance(b['risque_'+m]);
- const def=m==='mildiou'?"Charge d'infection attendue sur les 7 prochains jours":"Conditions moyennes sur les 7 prochains jours";
+ const m=JAUGE_MALADIE, v=Math.max(0,Math.min(100,Math.round(J['score_'+m]))), z=jaugeZone(v), tend=J['tendance_'+m];
  const lib={mildiou:'🍄 Mildiou',oidium:'🫧 Oïdium'};
- const tg=dispo.length>1?`<div class="jg-tg">${dispo.map(k=>`<button class="${k===m?'on':''}" onclick="jaugeChoisir('${k}')">${lib[k]}</button>`).join('')}</div>`
-  :`<div class="jg-tg"><button class="on">${lib[m]}</button></div>`;
- // demi-cercle de centre (110,110), rayon 88 ; l'aiguille part de -90° (score 0) et tourne jusqu'à +90° (score 100)
+ const tg=`<div class="jg-tg">${dispo.map(k=>`<button class="${k===m?'on':''}" ${dispo.length>1?`onclick="jaugeChoisir('${k}')"`:''}>${lib[k]}</button>`).join('')}</div>`;
+ const dt=J.calcule_le?new Date(J.calcule_le):null;
+ const quand=dt&&!isNaN(dt)?`Calculé le ${dt.toLocaleDateString('fr-FR',{day:'numeric',month:'long'})} à ${dt.getHours()} h`:'';
  return `<div class="jg" id="jaugeBulletin">${tg}
   <svg viewBox="0 0 220 126" role="img" aria-label="${lib[m].slice(3)} : ${v} sur 100, ${z[1].toLowerCase()}">
    <defs><linearGradient id="jgGrad" x1="22" y1="0" x2="198" y2="0" gradientUnits="userSpaceOnUse">
@@ -904,8 +898,9 @@ function jaugeHTML(b){
   </svg>
   <div class="jg-sc">${v}<small> / 100</small></div>
   <div class="jg-zo" style="color:${z[2]}">${z[1]}</div>
-  <div class="jg-ph">${jaugeEsc(def)}${tend?` · tendance <b>${jaugeEsc(tend)}</b>`:''}</div>
-  <div class="jg-nt">Indicateur calculé d'après la météo, indépendant des traitements réalisés</div>
+  ${tend?`<div class="jg-ph">tendance <b>${jaugeEsc(tend)}</b></div>`:''}
+  ${J.commune?`<div class="jg-co">📍 ${jaugeEsc(J.commune)}</div>`:''}
+  <div class="jg-nt">${quand?quand+' · ':''}d'après la météo de votre commune, indépendamment des traitements réalisés</div>
  </div>`;
 }
 function jaugeAnimer(){
@@ -920,7 +915,7 @@ function renderBulletin(){
  document.getElementById('bulletinDate').textContent=d?`Mis à jour le ${d}`:'';
  let h='';
  if(b.phenologie) h+=`<div class="alert al-g" style="margin-bottom:12px"><strong>🌿 Phénologie</strong><br>${b.phenologie}</div>`;
- h+=jaugeHTML(b);
+ h+=jaugeHTML();
  if(b.risque_mildiou) h+=`<div class="alert al-o"><strong>🍄 Mildiou — Risque</strong><br>${b.risque_mildiou}</div>`;
  if(b.reco_mildiou) h+=`<div class="alert al-b"><strong>🍄 Mildiou — Recommandation</strong><br>${b.reco_mildiou}</div>`;
  if(b.risque_oidium) h+=`<div class="alert al-o"><strong>🫧 Oïdium — Risque</strong><br>${b.risque_oidium}</div>`;

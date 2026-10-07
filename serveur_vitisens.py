@@ -799,12 +799,24 @@ def init_db():
         # Campagne — permet de numéroter et parcourir tous les bulletins
         # d'une saison, comme déjà fait pour les prescriptions.
         "ALTER TABLE bulletin_hebdo ADD COLUMN campagne TEXT",
-        # Jauge de pression du portail client (0-100), calculée à l'enregistrement du bulletin
+        # Anciennes colonnes de la jauge régionale (plus alimentées : la jauge est locale, table jauge_client)
         "ALTER TABLE bulletin_hebdo ADD COLUMN score_mildiou INTEGER",
         "ALTER TABLE bulletin_hebdo ADD COLUMN score_oidium INTEGER",
     ]:
         try: conn.execute(alter)
         except: pass
+    # Jauge de pression du portail : scores de la commune de chaque client, recalculés chaque jour par calculer_jauges.py
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS jauge_client (
+            id_client        TEXT PRIMARY KEY,
+            commune          TEXT,
+            source_position  TEXT,
+            score_mildiou    INTEGER,
+            tendance_mildiou TEXT,
+            score_oidium     INTEGER,
+            tendance_oidium  TEXT,
+            calcule_le       TEXT
+        )''')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS cuvees_parcellaires (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1371,26 +1383,6 @@ def get_bulletin_hebdo():
     conn.close()
     return jsonify(dict_from_row(row) if row else {})
 
-def _scores_jauge_bulletin(lat=None, lon=None):
-    """(score_mildiou, score_oidium) de 0 à 100 pour la jauge du portail client, chacun à None s'il ne peut pas être calculé.
-    Mildiou : charge d'infection prévue du moteur epidemio (epidemio_pilot.score_mildiou). Oïdium : moyenne des scores journaliers
-    de l'ancien modèle sur 7 jours (epidemio_pilot.score_oidium). NE LÈVE JAMAIS : un bulletin s'enregistre même sans scores."""
-    lat = COORDS['lat'] if lat is None else lat
-    lon = COORDS['lon'] if lon is None else lon
-    sm = so = None
-    try:
-        from epidemio_pilot import synthese_mildiou_pour_prompt, score_mildiou
-        sm = score_mildiou(synthese_mildiou_pour_prompt(lat, lon))
-    except Exception as e:
-        print(f"[jauge] score mildiou non calculé : {e}")
-    try:
-        from epidemio_pilot import score_oidium
-        _, syn = _calculer_synthese_epidemio(lat, lon, True, True)
-        so = score_oidium(syn)
-    except Exception as e:
-        print(f"[jauge] score oïdium non calculé : {e}")
-    return sm, so
-
 @app.route('/api/bulletin-hebdo', methods=['POST'])
 def save_bulletin_hebdo():
     d = request.json
@@ -1414,11 +1406,8 @@ def save_bulletin_hebdo():
          d.get('texte_phenologie'), d.get('passage_en_cours'), d.get('no_presc_motif'),
          str(datetime.now().year)))
     nouvel_id = cur.lastrowid
-    conn.commit()
-    sm, so = _scores_jauge_bulletin()                  # après le commit : le bulletin est enregistré même si le calcul échoue
-    conn.execute("UPDATE bulletin_hebdo SET score_mildiou=?, score_oidium=? WHERE id=?", (sm, so, nouvel_id))
     conn.commit(); conn.close()
-    return jsonify({"status": "ok", "id": nouvel_id, "score_mildiou": sm, "score_oidium": so})
+    return jsonify({"status": "ok", "id": nouvel_id})
 
 @app.route('/api/bulletin-hebdo/historique')
 def historique_bulletin_hebdo():
@@ -3678,6 +3667,18 @@ def portail_client_slug(slug):
         return "<h1>Lien invalide</h1><p>Ce lien n'est pas valide. Contactez votre conseiller.</p>", 404
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'portail_client.html')
 
+def _jauge_client(cid):
+    """Ligne jauge_client du client (scores de SA commune), ou None si elle n'existe pas encore."""
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT commune, source_position, score_mildiou, tendance_mildiou, score_oidium, tendance_oidium, "
+                           "calcule_le FROM jauge_client WHERE id_client=?", (cid,)).fetchone()
+        conn.close()
+        return dict_from_row(row) if row else None
+    except Exception as e:
+        print(f"[jauge] lecture impossible : {e}")
+        return None
+
 @app.route('/api/portail-s/<slug>/data')
 def portail_data_slug(slug):
     client = get_client_by_token_or_slug(slug)
@@ -3694,7 +3695,7 @@ def portail_data_slug(slug):
     presc_courantes = [p for p in prescriptions if p.get("applique") != "Oui" and p.get("statut") != "annulé"]
     meteo = fetch_meteo_for_client(client)
     client_safe = {k: v for k, v in client.items() if k not in ("portail_token", "portail_slug", "email", "telephone", "notes")}
-    return jsonify({"client": client_safe, "bulletin": {"date": av.get("date_saisie",""), "phenologie": av.get("texte_phenologie",""), "risque_mildiou": av.get("risque_mildiou",""), "reco_mildiou": av.get("reco_mildiou",""), "risque_oidium": av.get("risque_oidium",""), "reco_oidium": av.get("reco_oidium",""), "gel": av.get("gel",""), "epi": av.get("epi",""), "score_mildiou": av.get("score_mildiou"), "score_oidium": av.get("score_oidium")}, "dernier_passage": prochain_passage, "prescriptions": presc_courantes, "all_prescriptions": prescriptions, "meteo": meteo or []})
+    return jsonify({"client": client_safe, "bulletin": {"date": av.get("date_saisie",""), "phenologie": av.get("texte_phenologie",""), "risque_mildiou": av.get("risque_mildiou",""), "reco_mildiou": av.get("reco_mildiou",""), "risque_oidium": av.get("risque_oidium",""), "reco_oidium": av.get("reco_oidium",""), "gel": av.get("gel",""), "epi": av.get("epi","")}, "jauge": _jauge_client(cid), "dernier_passage": prochain_passage, "prescriptions": presc_courantes, "all_prescriptions": prescriptions, "meteo": meteo or []})
 
 @app.route('/api/portail-s/<slug>/valider', methods=['POST'])
 def portail_valider_slug(slug):
@@ -3858,9 +3859,8 @@ def portail_data(token):
             "reco_oidium": av.get("reco_oidium", ""),
             "gel": av.get("gel", ""),
             "epi": av.get("epi", ""),
-            "score_mildiou": av.get("score_mildiou"),
-            "score_oidium": av.get("score_oidium"),
         },
+        "jauge": _jauge_client(client["id"]),
         "dernier_passage": prochain_passage,
         "prescriptions": presc_courantes,
         "all_prescriptions": prescriptions,
