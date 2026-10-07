@@ -1224,6 +1224,14 @@ async function loadBH(){
   <div class="fg"><div><label>Analyse oïdium</label><textarea id="bh_ro"></textarea></div><div><label>Recommandation</label><textarea id="bh_xo"></textarea></div></div>
   <h4 style="color:var(--gr);margin:14px 0 6px">Autres</h4>
   <div class="fg"><div><label>Gel / Ravageurs</label><textarea id="bh_ge">${bh.gel||''}</textarea></div><div><label>Avance phéno</label><input id="bh_av" value="${bh.avance||''}"></div></div>
+  <div id="bh_botry" style="margin:8px 0 4px;padding:10px 12px;border:1px solid #E5EDE7;border-radius:10px;background:#FAFCFA">
+   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <strong style="font-size:13px">🍇 Aide botrytis (modèle, Reims)</strong>
+    <button type="button" class="btn bb btn-sm" onclick="genererBotrytisBH()">Rédiger le paragraphe Botrytis (IA)</button>
+    <span style="font-size:10px;color:var(--gr)">Aide à la rédaction : le texte est ajouté au champ « Gel / Ravageurs », à relire. Jamais affiché tel quel au client.</span>
+   </div>
+   <div id="bh_botry_res" style="font-size:12px;margin-top:6px"></div>
+  </div>
   <h4 style="color:var(--rd);margin:14px 0 6px">📋 Pas de traitement prescrit cette semaine ?</h4>
   <div style="margin-bottom:8px">
    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
@@ -1263,6 +1271,30 @@ function voirAncienBulletin(id){
   zone.style.display='block';
  });
 }
+async function genererBotrytisBH(){
+ const zone=document.getElementById('bh_botry_res');
+ if(!zone) return;
+ zone.textContent='Calcul du modèle botrytis et rédaction en cours...';
+ try{
+  const r=await fetch('/api/generer-texte-botrytis');
+  const d=await r.json();
+  if(d.error){ zone.textContent='❌ '+d.error; return; }
+  const s=d.synthese||{};
+  const f=v=>(v==null?'—':Number(v).toFixed(2).replace('.',','));
+  const classe={faible:'faible',intermediaire:'intermédiaire',severe:'sévère'}[s.classe_saison]||'—';
+  const jr=(s.jours_a_risque_7j||[]).map(j=>`${j.date.slice(8,10)}/${j.date.slice(5,7)} (${j.humectation_h} h d'humectation, HR ${Math.round(j.hr)} %)`).join(', ');
+  zone.innerHTML=`Saison : <b>${classe}</b> · floraison ${f(s.sev1_floraison)} · fermeture ${f(s.sev2_fermeture)} · maturité ${f(s.sev3_maturite)}`
+   +` · stade estimé ${s.stade_bbch==null?'—':'BBCH '+String(s.stade_bbch).replace('.',',')}${s.phenologie_recalee_bsv?' (recalé BSV)':''}`
+   +`<br>7 prochains jours : ${jr||'aucun jour à risque notable'}`
+   +(d.error_ia?`<br><span style="color:var(--rd)">${d.error_ia}</span>`:'');
+  if(d.autre){
+   const ge=document.getElementById('bh_ge');
+   ge.value=(ge.value.trim()?ge.value.trim()+'\n\n':'')+d.autre;
+   zone.innerHTML+='<br>✅ Paragraphe ajouté à « Gel / Ravageurs » — à relire avant d\'enregistrer.';
+  }
+ }catch(e){ zone.textContent='❌ '+e.message; }
+}
+
 async function genererTexteBH(){
  const msg=document.getElementById('ia_bh_msg');
  if(!msg) return;
