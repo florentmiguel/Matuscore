@@ -300,6 +300,41 @@ def main() -> int:
         f = lambda d: d.strftime("%d/%m") if d else "  -  "
         print(f"{l['indice']}   {l['saison']}  {l['cible']:4.0f}    {f(l['coloration'])}    {f(l['chute'])}  {l['c2']:5.1f}  {l['c2s']:6.1f}"
               f"     {l['ind_ancien']:6.0f}      {l['ind_sen']:6.0f}")
+
+    # --- risque de début de saison simulé : stock (notre indice) x printemps réel de l'année de l'indice ---
+    print("\nRISQUE DE DÉBUT DE SAISON SIMULÉ (nouvelles colonies du débourrement au 30 juin)")
+    for l in ok:
+        annee = l["indice"]
+        try:
+            lignes_an = archive(annee)
+        except Exception as e:                                          # noqa: BLE001
+            print(f"  {annee} : archive indisponible ({e})")
+            l["risque"] = l["risque_100"] = None
+            continue
+        rows_an = [r for r in ep.lignes_vers_rows(lignes_an) if r["t"] < datetime(annee, 12, 31, 20, tzinfo=timezone.utc)]
+        if not rows_an:
+            print(f"  {annee} : série vide")
+            l["risque"] = l["risque_100"] = None
+            continue
+        fin_juin = f"{annee}-06-30"
+        for cle, stock in (("risque", l["ind_ancien"]), ("risque_100", 100.0)):
+            res = oi.calculer_saison(rows_an, {"primaire": {"indice_chasmotheces": stock}},
+                                     now=datetime(annee, 12, 31, tzinfo=timezone.utc))
+            l[cle] = sum(d["nouvelles_colonies"] for d in res["jours"] if d["date"] <= fin_juin)
+            if cle == "risque":
+                l["symptomes"] = (res.get("jalons") or {}).get("premiers_symptomes_visibles")
+                l["debourrement"] = res.get("debourrement")
+    ev = [l for l in ok if l.get("risque") is not None]
+    r_ = [l["cible"] for l in ev]
+    print(f"Spearman avec l'indice de référence : stock seul {spearman([l['ind_ancien'] for l in ev], r_):+.2f}   "
+          f"printemps seul (stock 100) {spearman([l['risque_100'] for l in ev], r_):+.2f}   "
+          f"stock x printemps {spearman([l['risque'] for l in ev], r_):+.2f}")
+    print("Premiers symptômes simulés (plus tôt = risque plus fort) : Spearman "
+          f"{spearman([-(date.fromisoformat(l['symptomes']).timetuple().tm_yday) if l.get('symptomes') else -400 for l in ev], r_):+.2f}")
+    print("\nindice  réf.  stock  débourr.  colonies->30/06 (stock)  colonies->30/06 (stock 100)  1ers symptômes")
+    for l in ev:
+        print(f"{l['indice']}   {l['cible']:4.0f}  {l['ind_ancien']:5.0f}  {(l['debourrement'] or '')[5:]:>8}  {l['risque']:14.4g}"
+              f"          {l['risque_100']:14.4g}          {l.get('symptomes') or '-'}")
     return 0
 
 
