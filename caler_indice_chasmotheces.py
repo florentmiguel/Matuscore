@@ -20,7 +20,7 @@ import json
 import math
 import os
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import epidemio_pilot as ep
 
@@ -41,7 +41,8 @@ def archive(annee: int) -> list[dict]:
             return json.load(f)
     ep.charger_moteur()
     import recuperer_meteo_horaire as rm
-    data = rm._get_json(rm.url_archive(LAT, LON, date(annee, 1, 1), date(annee, 12, 31)))
+    fin = min(date(annee, 12, 31), date.today() - timedelta(days=7))
+    data = rm._get_json(rm.url_archive(LAT, LON, date(annee, 1, 1), fin))
     lignes = [{"time": t, **v} for t, v in sorted(rm._lignes(data).items())]
     with open(chemin, "w", encoding="utf-8") as f:
         json.dump(lignes, f)
@@ -78,6 +79,27 @@ def formation_automne(rows: list[dict], annee: int, oi) -> float:
             continue
         integ += oi.taux_chasmotheces(T, p) / 24.0
     return integ
+
+
+def pression_periode(res: dict, debut: str, fin: str, sensibilite: bool) -> float:
+    """Somme du potentiel journalier (0-1) entre deux dates MM-JJ, pondérée ou non par la sensibilité du feuillage."""
+    total = 0.0
+    for d in res["jours"]:
+        if debut <= d["date"][5:] <= fin:
+            f = (d.get("sens_feuilles") or 0.0) if sensibilite else 1.0
+            total += d["potentiel_pct"] * f / 100.0
+    return total
+
+
+def hiver(lignes_saison: list[dict], lignes_suivante: list[dict], saison: int) -> tuple[float, float]:
+    """(pluie mm, heures sous -5 °C) du 1er novembre de la saison au 31 mars de l'année suivante."""
+    pluie, gel = 0.0, 0
+    for l in lignes_saison + lignes_suivante:
+        t = l["time"][:10]
+        if f"{saison}-11-01" <= t <= f"{saison + 1}-03-31":
+            pluie += l.get("precipitation") or 0.0
+            gel += (l.get("temperature_2m") is not None and l["temperature_2m"] < -5.0)
+    return pluie, float(gel)
 
 
 def resoudre(A, y):
@@ -134,35 +156,36 @@ def main() -> int:
         res = oi.calculer_saison(rows, {"primaire": {"indice_chasmotheces": 0}},
                                  now=datetime(saison, 12, 31, tzinfo=timezone.utc))
         c1, c2 = pression_saison(res, saison), formation_automne(rows, saison, oi)
-        lignes_tab.append({"indice": annee_indice, "saison": saison, "cible": cible, "c1": c1, "c2": c2})
-    ok = [l for l in lignes_tab if l["c1"] > 0 and l["c2"] > 0]
-    if len(ok) < 5:
-        print("Pas assez d'années exploitables.")
-        return 1
-
-    y = [math.log(l["cible"]) for l in ok]
-    modeles = {
-        "C1 seul": [[1.0, math.log(l["c1"])] for l in ok],
-        "C2 seul": [[1.0, math.log(l["c2"])] for l in ok],
-        "C1 x C2": [[1.0, math.log(l["c1"]), math.log(l["c2"])] for l in ok],
-    }
+        try:
+            suivante = archive(saison + 1)
+        except Exception as e:                                          # noqa: BLE001
+            print(f"  {saison + 1} : archive indisponible ({e}), hiver ignoré")
+            suivante = []
+        ph, gh = hiver(lignes, suivante, saison)
+        lignes_tab.append({"indice": annee_indice, "saison": saison, "cible": cible, "c1": c1, "c2": c2,
+                           "p_jul_sep": pression_periode(res, "07-01", "09-30", True),
+                           "p_aou_oct": pression_periode(res, "08-01", "10-31", False),
+                           "pluie_hiver": ph, "gel_hiver": gh})
+    ok = [l for l in lignes_tab if l["c2"] > 0]
+    ref = [l["cible"] for l in ok]
     print(f"\nPosition {LAT}, {LON} — {len(ok)} saisons\n")
-    print("Spearman (classement) avec l'indice de référence :")
-    print(f"  C1 {spearman([l['c1'] for l in ok], [l['cible'] for l in ok]):+.2f}   "
-          f"C2 {spearman([l['c2'] for l in ok], [l['cible'] for l in ok]):+.2f}   "
-          f"C1xC2 {spearman([l['c1'] * l['c2'] for l in ok], [l['cible'] for l in ok]):+.2f}\n")
-    preds = {}
-    for nom, A in modeles.items():
-        coef = resoudre(A, y)
-        pr = [math.exp(sum(c * a for c, a in zip(coef, row))) for row in A]
-        preds[nom] = pr
-        eam = sum(abs(p - l["cible"]) for p, l in zip(pr, ok)) / len(ok)
-        print(f"{nom:<8} coefficients {['%.3f' % c for c in coef]}   écart absolu moyen {eam:.1f} points   "
-              f"Spearman {spearman(pr, [l['cible'] for l in ok]):+.2f}")
-    print("\nindice  saison   référence      C1        C2     C1 seul  C2 seul  C1xC2")
-    for i, l in enumerate(ok):
-        print(f"{l['indice']}    {l['saison']}    {l['cible']:5.0f}   {l['c1']:8.2f}  {l['c2']:8.2f}   "
-              f"{preds['C1 seul'][i]:6.0f}   {preds['C2 seul'][i]:6.0f}   {preds['C1 x C2'][i]:6.0f}")
+    print("Classement (Spearman) de chaque facteur avec l'indice de référence (hiver : on attend un signe négatif)")
+    for k in ("c1", "p_jul_sep", "p_aou_oct", "c2", "pluie_hiver", "gel_hiver"):
+        print(f"  {k:<12} {spearman([l[k] for l in ok], ref):+.2f}")
+    combis = {
+        "C2 x P(jul-sep)": lambda l: l["c2"] * l["p_jul_sep"],
+        "C2 x P(aou-oct)": lambda l: l["c2"] * l["p_aou_oct"],
+        "C2 / pluie hiver": lambda l: l["c2"] / max(1.0, l["pluie_hiver"]),
+        "C2 x P(aou-oct) / pluie hiver": lambda l: l["c2"] * l["p_aou_oct"] / max(1.0, l["pluie_hiver"]),
+        "C2 x P(jul-sep) / pluie hiver": lambda l: l["c2"] * l["p_jul_sep"] / max(1.0, l["pluie_hiver"]),
+    }
+    print("\nCombinaisons :")
+    for nom, f in combis.items():
+        print(f"  {nom:<32} {spearman([f(l) for l in ok], ref):+.2f}")
+    print("\nindice saison  réf.   C1    P_jul-sep P_aou-oct   C2   pluie_hiv gel_hiv")
+    for l in ok:
+        print(f"{l['indice']}   {l['saison']}  {l['cible']:4.0f}  {l['c1']:6.1f}  {l['p_jul_sep']:7.1f}  {l['p_aou_oct']:7.1f}  "
+              f"{l['c2']:6.1f}  {l['pluie_hiver']:7.0f}  {l['gel_hiver']:6.0f}")
     return 0
 
 
